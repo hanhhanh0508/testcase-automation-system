@@ -3,7 +3,17 @@ target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+# Node
+node_modules/
 
+# Java
+target/
+
+# VS Code
+.vscode/
+
+# logs
+*.log
 ### STS ###
 .apt_generated
 .classpath
