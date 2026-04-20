@@ -72,6 +72,20 @@
 			<artifactId>dom4j</artifactId>
 			<version>2.1.4</version>
 		</dependency>
+		<!-- pom.xml -->
+		<!-- Selenium Java -->
+		<dependency>
+			<groupId>org.seleniumhq.selenium</groupId>
+			<artifactId>selenium-java</artifactId>
+			<version>4.20.0</version>
+		</dependency>
+
+		<!-- WebDriverManager: tự tải chromedriver -->
+		<dependency>
+			<groupId>io.github.bonigarcia</groupId>
+			<artifactId>webdrivermanager</artifactId>
+			<version>5.8.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
