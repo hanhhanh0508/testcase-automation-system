@@ -1,282 +1,262 @@
 import { useState, useRef } from 'react'
-import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
+import { PageHeader, Card, SectionLabel, Button, Spinner } from '../components/ui'
+import '../components/ui.css'
 import './UploadPage.css'
 
 const API = 'http://localhost:8080/api/diagrams'
 
-// ── Sub-components ─────────────────────────────────────────
+/* ── helpers ─────────────────────────────────────────────────── */
+function detectExt(filename = '') {
+  const ext = filename.split('.').pop().toLowerCase()
+  const map = { xmi: 'XMI', xml: 'XMI', puml: 'PlantUML', plantuml: 'PlantUML', drawio: 'DrawIO', json: 'JSON' }
+  return map[ext] || 'Unknown'
+}
 
-function ActorCard({ name, initial, useCases, extra }) {
+/* ── sub-components ──────────────────────────────────────────── */
+function StatPill({ n, label }) {
   return (
-    <div className="actor-card">
+    <div className="stat-pill">
+      <span className="stat-num">{n}</span>
+      <span className="stat-lbl">{label}</span>
+    </div>
+  )
+}
+
+function ActorBlock({ name, initial, useCases, extra }) {
+  return (
+    <div className="actor-block">
       <div className="actor-head">
-        <div className="actor-name-row">
+        <div className="actor-left">
           <div className="actor-avatar">{initial}</div>
           <span className="actor-name">{name}</span>
         </div>
-        <span className="badge-uc">{useCases.length} UC</span>
+        <span className="uc-count-badge">{useCases.length + (extra || 0)} UC</span>
       </div>
       <div className="uc-list">
-        {useCases.map((uc, i) => (
-          <div key={i} className="uc-item">{uc}</div>
-        ))}
-        {extra > 0 && (
-          <div className="uc-item uc-extra">+{extra} nữa...</div>
-        )}
+        {useCases.map((uc, i) => <div key={i} className="uc-row">{uc}</div>)}
+        {extra > 0 && <div className="uc-row uc-extra">+{extra} nữa...</div>}
       </div>
     </div>
   )
 }
 
-function FileCard({ file, stats }) {
+function RelBox({ relationships }) {
+  const tagCls = { include: 'rel-inc', extend: 'rel-ext', generalization: 'rel-gen' }
   return (
-    <div className="file-card">
-      <div className="file-card-top">
-        <div className="file-card-left">
-          <span className="file-name">{file.name}</span>
-          <span className="badge-ok">Parsed OK</span>
+    <div className="rel-box">
+      <SectionLabel>Include / Extend</SectionLabel>
+      {relationships.map((r, i) => (
+        <div key={i} className="rel-row">
+          <span className={`rel-tag ${tagCls[r.type] || 'rel-inc'}`}>
+            «{r.type}»
+          </span>
+          <span className="rel-text">{r.from} → {r.to}</span>
         </div>
-        <span className="file-size">{Math.round(file.size / 1024)} KB</span>
-      </div>
-      <div className="stats-row">
-        <div className="stat-item">
-          <div className="stat-num">{stats.actors}</div>
-          <div className="stat-label">Actors</div>
-        </div>
-        <div className="stat-item">
-          <div className="stat-num">{stats.useCases}</div>
-          <div className="stat-label">Use Cases</div>
-        </div>
-        <div className="stat-item">
-          <div className="stat-num">{stats.relationships}</div>
-          <div className="stat-label">Relationships</div>
-        </div>
-      </div>
+      ))}
     </div>
   )
 }
 
-// ── Main Page ──────────────────────────────────────────────
+/* ── MOCK DATA ───────────────────────────────────────────────── */
+const MOCK_PARSED = {
+  stats: { actors: 5, useCases: 18, relationships: 24 },
+  actors: [
+    { name: 'Customer', initial: 'C', useCases: ['Login / Logout', 'View product', 'Add to cart'], extra: 0 },
+    { name: 'Admin', initial: 'A', useCases: ['Manage products', 'Manage orders', 'View reports'], extra: 2 },
+  ],
+  relationships: [
+    { type: 'include', from: 'Checkout', to: 'Payment' },
+    { type: 'include', from: 'Checkout', to: 'Verify stock' },
+    { type: 'extend',  from: 'Login',    to: '2FA verify' },
+  ],
+}
 
+/* ── MAIN PAGE ───────────────────────────────────────────────── */
 export default function UploadPage() {
   const navigate = useNavigate()
-  const fileInputRef = useRef(null)
-  const [dragOver, setDragOver] = useState(false)
+  const fileRef  = useRef(null)
 
-  // File state
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [parsedFile, setParsedFile] = useState(null) // file đã upload thành công
+  const [dragOver,    setDragOver]    = useState(false)
+  const [file,        setFile]        = useState(null)
+  const [parsed,      setParsed]      = useState(null)   // truthy = file parsed
+  const [loading,     setLoading]     = useState(false)
+  const [generating,  setGenerating]  = useState(false)
+  const [error,       setError]       = useState(null)
+  const [diagramId,   setDiagramId]   = useState(null)
 
-  // Form config
+  /* config state */
   const [projectName, setProjectName] = useState('Online Shop System')
-  const [testType, setTestType] = useState('Functional')
-  const [language, setLanguage] = useState('vi')
-  const [includeTypes, setIncludeTypes] = useState({
-    happy: true,
-    negative: true,
-    boundary: true,
-    performance: false,
+  const [testType,    setTestType]    = useState('Functional')
+  const [language,    setLanguage]    = useState('vi')
+  const [includes,    setIncludes]    = useState({
+    happy: true, negative: true, boundary: true, performance: false,
   })
 
-  // API state
-  const [loading, setLoading] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState(null)
-  const [diagramId, setDiagramId] = useState(null)
+  /* ── file handling ── */
+  const ALLOWED = ['xmi','xml','puml','plantuml','drawio','json']
 
-  // Mock parsed data (thay bằng API response thật sau)
-  const [parsedData] = useState({
-    actors: [
-      {
-        name: 'Customer',
-        initial: 'C',
-        useCases: ['Login / Logout', 'View product', 'Add to cart'],
-        extra: 0,
-      },
-      {
-        name: 'Admin',
-        initial: 'A',
-        useCases: ['Manage products', 'Manage orders', 'View reports'],
-        extra: 2,
-      },
-    ],
-    relationships: [
-      { type: 'include', from: 'Checkout', to: 'Payment' },
-      { type: 'include', from: 'Checkout', to: 'Verify stock' },
-      { type: 'extend', from: 'Login', to: '2FA verify' },
-    ],
-    stats: { actors: 5, useCases: 18, relationships: 24 },
-  })
-
-  // ── Handlers ────────────────────────────────────────────
-
-  const handleFileSelect = (file) => {
-    if (!file) return
-    const allowed = ['.xmi', '.xml', '.puml', '.plantuml', '.drawio', '.json']
-    const ext = '.' + file.name.split('.').pop().toLowerCase()
-    if (!allowed.includes(ext)) {
-      setError('Định dạng không hỗ trợ. Vui lòng chọn file .xmi, .xml, .puml, .drawio hoặc .json')
+  const handleFile = (f) => {
+    if (!f) return
+    const ext = f.name.split('.').pop().toLowerCase()
+    if (!ALLOWED.includes(ext)) {
+      setError('Định dạng không hỗ trợ. Vui lòng chọn .xmi, .xml, .puml, .drawio hoặc .json')
       return
     }
-    setSelectedFile(file)
+    setFile(f)
     setError(null)
-    handleUpload(file)
+    doUpload(f)
   }
 
-  const handleUpload = async (file) => {
+  const doUpload = async (f) => {
     setLoading(true)
     setError(null)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      if (projectName) formData.append('name', projectName)
-      const res = await axios.post(`${API}/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      setDiagramId(res.data.data?.id)
-      setParsedFile(file)
-    } catch (e) {
-      // Nếu backend chưa chạy, dùng mock để UI vẫn hoạt động
-      console.warn('Backend chưa sẵn sàng, dùng mock data:', e.message)
-      setParsedFile(file)
+      const fd = new FormData()
+      fd.append('file', f)
+      if (projectName) fd.append('name', projectName)
+      const res = await fetch(`${API}/upload`, { method: 'POST', body: fd })
+      const data = await res.json()
+      setDiagramId(data?.data?.id)
+      setParsed(MOCK_PARSED)
+    } catch {
+      // backend offline → dùng mock
+      setParsed(MOCK_PARSED)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDrop = (e) => {
-    e.preventDefault()
-    setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    handleFileSelect(file)
-  }
-
-  const handleDragOver = (e) => {
-    e.preventDefault()
-    setDragOver(true)
-  }
-
-  const toggleInclude = (key) => {
-    setIncludeTypes(prev => ({ ...prev, [key]: !prev[key] }))
-  }
-
   const handleGenerate = async () => {
-    if (!parsedFile && !diagramId) {
-      setError('Vui lòng upload file trước')
-      return
-    }
+    if (!parsed) { setError('Vui lòng upload file trước'); return }
     setGenerating(true)
-    setError(null)
     try {
-      // Gọi API sinh test case (sẽ implement ngày 19-20/4)
       if (diagramId) {
-        await axios.post(`${API}/${diagramId}/generate`, {
-          projectName,
-          testType,
-          language,
-          includeTypes,
+        await fetch(`${API}/${diagramId}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectName, testType, language, includes }),
         })
       }
-      navigate('/testcases')
-    } catch (e) {
-      // Mock: navigate thẳng nếu backend chưa có endpoint này
-      navigate('/testcases')
-    } finally {
-      setGenerating(false)
-    }
+    } catch { /* ignore */ }
+    setGenerating(false)
+    navigate('/testcases')
   }
 
-  // ── Render ────────────────────────────────────────────
+  const toggleInclude = (k) => setIncludes(p => ({ ...p, [k]: !p[k] }))
 
+  /* ── render ── */
   return (
     <div className="upload-page">
-      <div className="page-header">
-        <h1 className="page-title">Upload Use Case Diagram</h1>
-        <p className="page-subtitle">Người dùng tải file UML lên và cấu hình trước khi sinh test case</p>
-      </div>
+      <PageHeader
+        title="Upload Use Case Diagram"
+        subtitle="Người dùng tải file UML lên và cấu hình trước khi sinh test case"
+      />
 
-      <div className="upload-layout">
-        {/* ── LEFT COLUMN ── */}
+      <div className="upload-grid">
+        {/* ── LEFT ── */}
         <div className="upload-left">
 
           {/* Dropzone */}
-          <section className="upload-section">
-            <div className="section-label">Tải lên diagram</div>
+          <section>
+            <SectionLabel>Tải lên diagram</SectionLabel>
             <div
-              className={`dropzone ${dragOver ? 'drag-over' : ''} ${parsedFile ? 'has-file' : ''}`}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
+              className={`dropzone ${dragOver ? 'dz-over' : ''} ${parsed ? 'dz-done' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}
-              onClick={() => fileInputRef.current?.click()}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]) }}
+              onClick={() => fileRef.current?.click()}
             >
               <input
-                ref={fileInputRef}
+                ref={fileRef}
                 type="file"
                 accept=".xmi,.xml,.puml,.plantuml,.drawio,.json"
                 style={{ display: 'none' }}
-                onChange={e => handleFileSelect(e.target.files[0])}
+                onChange={(e) => handleFile(e.target.files[0])}
               />
               {loading ? (
-                <div className="dropzone-loading">
-                  <div className="spinner" />
-                  <div className="dropzone-text">Đang tải lên...</div>
+                <div className="dz-loading">
+                  <Spinner size={24} />
+                  <span className="dz-loading-text">Đang phân tích file...</span>
                 </div>
               ) : (
                 <>
-                  <div className="dropzone-icon">↑</div>
-                  <div className="dropzone-text">Kéo thả file vào đây</div>
-                  <div className="dropzone-formats">Hỗ trợ: .xmi · .xml · .puml · .drawio · .json</div>
-                  <div className="dropzone-btn-row" onClick={e => e.stopPropagation()}>
-                    <button className="btn" onClick={() => fileInputRef.current?.click()}>
+                  <div className="dz-icon-wrap">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="17 8 12 3 7 8"/>
+                      <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                  </div>
+                  <div className="dz-title">Kéo thả file vào đây</div>
+                  <div className="dz-formats">Hỗ trợ: .xmi · .xml · .puml · .drawio · .json</div>
+                  <div className="dz-btns" onClick={(e) => e.stopPropagation()}>
+                    <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
                       Chọn file
-                    </button>
-                    <button className="btn">Paste URL</button>
+                    </Button>
+                    <Button variant="secondary" size="sm">Paste URL</Button>
                   </div>
                 </>
               )}
             </div>
           </section>
 
-          {/* File đã parse thành công */}
-          {parsedFile && (
-            <FileCard
-              file={parsedFile}
-              stats={parsedData.stats}
-            />
+          {/* File parsed card */}
+          {parsed && file && (
+            <Card>
+              <div className="fcard-top">
+                <div className="fcard-left">
+                  <div className="fcard-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+                      <polyline points="13 2 13 9 20 9"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="fcard-name">{file.name}</div>
+                    <div className="fcard-meta">{detectExt(file.name)} · {Math.round(file.size / 1024)} KB</div>
+                  </div>
+                </div>
+                <span className="badge-parsed">Parsed OK</span>
+              </div>
+              <div className="stats-row">
+                <StatPill n={parsed.stats.actors}        label="Actors" />
+                <StatPill n={parsed.stats.useCases}      label="Use Cases" />
+                <StatPill n={parsed.stats.relationships} label="Relationships" />
+              </div>
+            </Card>
           )}
 
           {/* Error */}
           {error && (
-            <div className="error-box">
-              <span className="error-icon">!</span>
+            <div className="error-bar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
               {error}
             </div>
           )}
 
-          {/* Form cấu hình */}
-          <section className="config-section">
-            <div className="section-label">Cấu hình sinh test case</div>
+          {/* Config */}
+          <Card>
+            <SectionLabel>Cấu hình sinh test case</SectionLabel>
 
             <div className="form-group">
               <label className="form-label">Tên dự án</label>
               <input
                 className="form-input"
-                type="text"
                 value={projectName}
-                onChange={e => setProjectName(e.target.value)}
+                onChange={(e) => setProjectName(e.target.value)}
                 placeholder="VD: Online Shop System"
               />
             </div>
 
-            <div className="form-row">
+            <div className="form-row-2">
               <div className="form-group">
                 <label className="form-label">Loại test</label>
-                <select
-                  className="form-select"
-                  value={testType}
-                  onChange={e => setTestType(e.target.value)}
-                >
+                <select className="form-select" value={testType} onChange={(e) => setTestType(e.target.value)}>
                   <option value="Functional">Functional</option>
                   <option value="Integration">Integration</option>
                   <option value="E2E">End-to-End</option>
@@ -284,11 +264,7 @@ export default function UploadPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Ngôn ngữ output</label>
-                <select
-                  className="form-select"
-                  value={language}
-                  onChange={e => setLanguage(e.target.value)}
-                >
+                <select className="form-select" value={language} onChange={(e) => setLanguage(e.target.value)}>
                   <option value="vi">Tiếng Việt</option>
                   <option value="en">English</option>
                 </select>
@@ -297,67 +273,59 @@ export default function UploadPage() {
 
             <div className="form-group">
               <label className="form-label">Bao gồm test case cho</label>
-              <div className="checkbox-row">
+              <div className="cb-row">
                 {[
-                  { key: 'happy',       label: 'Happy path' },
-                  { key: 'negative',    label: 'Negative case' },
-                  { key: 'boundary',    label: 'Boundary' },
-                  { key: 'performance', label: 'Performance' },
-                ].map(({ key, label }) => (
-                  <label key={key} className="cb-item">
-                    <input
-                      type="checkbox"
-                      checked={includeTypes[key]}
-                      onChange={() => toggleInclude(key)}
-                    />
-                    {label}
+                  { k: 'happy',       l: 'Happy path' },
+                  { k: 'negative',    l: 'Negative case' },
+                  { k: 'boundary',    l: 'Boundary' },
+                  { k: 'performance', l: 'Performance' },
+                ].map(({ k, l }) => (
+                  <label key={k} className="cb-item">
+                    <input type="checkbox" checked={includes[k]} onChange={() => toggleInclude(k)} />
+                    {l}
                   </label>
                 ))}
               </div>
             </div>
 
             <div className="action-row">
-              <button
-                className="btn btn-primary"
+              <Button
+                variant="primary"
+                size="md"
+                disabled={!parsed || generating}
                 onClick={handleGenerate}
-                disabled={generating}
               >
-                {generating ? 'Đang sinh...' : 'Sinh test case →'}
-              </button>
-              <button className="btn">Xem preview</button>
+                {generating
+                  ? <><Spinner size={13} /> Đang sinh...</>
+                  : 'Sinh test case →'}
+              </Button>
+              <Button variant="secondary" size="md" disabled={!parsed}>
+                Xem preview
+              </Button>
             </div>
-          </section>
+          </Card>
         </div>
 
-        {/* ── RIGHT COLUMN ── */}
+        {/* ── RIGHT ── */}
         <div className="upload-right">
-          <div className="section-label">Cấu trúc đã phân tích</div>
+          <SectionLabel>Cấu trúc đã phân tích</SectionLabel>
 
-          {parsedFile ? (
+          {parsed ? (
             <>
-              {parsedData.actors.map((actor) => (
-                <ActorCard key={actor.name} {...actor} />
+              {parsed.actors.map((a) => (
+                <ActorBlock key={a.name} {...a} />
               ))}
-
-              <div className="rel-box">
-                <div className="rel-section-label">Include / Extend</div>
-                {parsedData.relationships.map((rel, i) => (
-                  <div key={i} className="rel-item">
-                    <span className={`rel-tag rel-tag-${rel.type}`}>
-                      {rel.type}
-                    </span>
-                    <span className="rel-text">
-                      {rel.from} → {rel.to}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
+              <RelBox relationships={parsed.relationships} />
               <p className="hint-text">Click vào use case để xem chi tiết</p>
             </>
           ) : (
             <div className="empty-right">
-              <div className="empty-icon">◎</div>
+              <div className="empty-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+              </div>
               <div className="empty-text">Upload file để xem cấu trúc phân tích</div>
             </div>
           )}

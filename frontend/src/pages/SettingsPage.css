@@ -1,0 +1,100 @@
+.settings-page {
+  padding: 28px 32px;
+  max-width: 900px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.settings-form { display: flex; flex-direction: column; gap: 0; }
+
+.sf-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.sf-row:last-child { border-bottom: none; }
+
+.sf-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.sf-input,
+.sf-select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  outline: none;
+  font-family: var(--font-sans);
+  transition: var(--transition);
+  width: 100%;
+}
+
+.sf-input:focus,
+.sf-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
+}
+
+.sf-mono { font-family: var(--font-mono); }
+
+.sf-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.sf-toggle input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--text-primary);
+}
+
+.settings-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.green {
+  background: var(--success);
+  box-shadow: 0 0 5px rgba(22,163,74,0.4);
+}
+
+.status-txt {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+}
