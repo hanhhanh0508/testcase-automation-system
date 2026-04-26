@@ -7,18 +7,22 @@ import com.testcase.backend.service.DiagramService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
+import com.testcase.backend.service.TestCaseGeneratorService;
 import java.util.List;
+
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/diagrams")
 public class DiagramController {
 
-    private final DiagramService diagramService;
+   private final DiagramService diagramService;
+   private final TestCaseGeneratorService generatorService;
 
-    public DiagramController(DiagramService diagramService) {
+    public DiagramController(DiagramService diagramService,
+                            TestCaseGeneratorService generatorService) {
         this.diagramService = diagramService;
+        this.generatorService = generatorService;
     }
 
     // POST /api/diagrams/text — nhận use case dạng text
@@ -49,7 +53,28 @@ public class DiagramController {
                     ApiResponseDTO.error("Lỗi upload: " + e.getMessage()));
         }
     }
+    // POST /api/diagrams/{id}/generate — sinh test case
+    @PostMapping("/{id}/generate")
+    public ResponseEntity<ApiResponseDTO<List<com.testcase.backend.entity.TestCase>>> generateTestCases(
+            @PathVariable UUID id) {
+        try {
+            List<com.testcase.backend.entity.TestCase> testCases = generatorService.generateForDiagram(id);
+            return ResponseEntity.ok(
+                    ApiResponseDTO.ok("Sinh " + testCases.size() + " test case thành công", testCases));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(
+                    ApiResponseDTO.error("Lỗi sinh test case: " + e.getMessage()));
+        }
+    }
 
+    // GET /api/diagrams/{id}/testcases — lấy danh sách test case
+    @GetMapping("/{id}/testcases")
+    public ResponseEntity<ApiResponseDTO<List<com.testcase.backend.entity.TestCase>>> getTestCases(
+            @PathVariable UUID id) {
+        List<com.testcase.backend.entity.TestCase> testCases = generatorService.getTestCasesForDiagram(id);
+        return ResponseEntity.ok(
+                ApiResponseDTO.ok("OK", testCases));
+    }
     // GET /api/diagrams — lấy danh sách
     @GetMapping
     public ResponseEntity<ApiResponseDTO<List<UseCaseDiagram>>> getAllDiagrams() {
