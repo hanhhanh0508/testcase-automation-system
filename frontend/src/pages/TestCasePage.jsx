@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { PageHeader, Badge, Button, SectionLabel } from '../components/ui'
 import '../components/ui.css'
 import './TestCasePage.css'
+import api from '../api'
 
 /* ── MOCK DATA ───────────────────────────────────────────────── */
 const ALL_TC = [
@@ -56,6 +57,35 @@ function exportJSON(data) {
 /* ── PAGE ────────────────────────────────────────────────────── */
 export default function TestCasePage() {
   const navigate = useNavigate()
+  const [allTc, setAllTc]     = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Lấy diagram mới nhất rồi lấy test case của nó
+    api.get('/api/diagrams')
+      .then(res => {
+        const diagrams = res.data.data
+        if (diagrams.length === 0) return
+        const latest = diagrams[diagrams.length - 1]
+        return api.get(`/api/diagrams/${latest.id}/testcases`)
+      })
+      .then(res => {
+        if (res) setAllTc(res.data.data)
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
+
+  // Map data từ backend sang format frontend cần
+  const mapped = allTc.map(tc => ({
+    id:      tc.tcCode,
+    name:    tc.name,
+    type:    tc.testType === 'HAPPY_PATH' ? 'happy'
+           : tc.testType === 'NEGATIVE'   ? 'negative' : 'boundary',
+    status:  tc.status.toLowerCase(),
+    actor:   'User',
+    useCase: tc.useCase?.name || 'N/A',
+  }))
 
   const [search,   setSearch]   = useState('')
   const [selUC,    setSelUC]    = useState('Tất cả')

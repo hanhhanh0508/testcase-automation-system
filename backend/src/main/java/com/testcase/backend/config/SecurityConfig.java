@@ -31,6 +31,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Cho phép auth endpoints không cần token
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/diagrams/**").authenticated()
                         // Mọi request khác cần token
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

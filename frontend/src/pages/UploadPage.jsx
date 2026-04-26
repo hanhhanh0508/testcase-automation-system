@@ -3,9 +3,36 @@ import { useNavigate } from 'react-router-dom'
 import { PageHeader, Card, SectionLabel, Button, Spinner } from '../components/ui'
 import '../components/ui.css'
 import './UploadPage.css'
+import api from '../api'
 
 const API = 'http://localhost:8080/api/diagrams'
+const doUpload = async (f) => {
+  setLoading(true)
+  try {
+    const fd = new FormData()
+    fd.append('file', f)
+    fd.append('name', projectName)
+    const res = await api.post('/api/diagrams/upload', fd)
+    setDiagramId(res.data.data.id)
+    setParsed(MOCK_PARSED) // vẫn dùng mock cho phần hiển thị
+  } catch {
+    setError('Upload thất bại')
+  } finally {
+    setLoading(false)
+  }
+}
 
+const handleGenerate = async () => {
+  setGenerating(true)
+  try {
+    await api.post(`/api/diagrams/${diagramId}/generate`)
+    navigate('/testcases', { state: { diagramId } })
+  } catch {
+    setError('Sinh test case thất bại')
+  } finally {
+    setGenerating(false)
+  }
+}
 /* ── helpers ─────────────────────────────────────────────────── */
 function detectExt(filename = '') {
   const ext = filename.split('.').pop().toLowerCase()
