@@ -29,10 +29,10 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Cho phép auth endpoints không cần token
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/diagrams/**").authenticated()
-                        // Mọi request khác cần token
+                        .requestMatchers("/api/testcases/**").authenticated()
+                        .requestMatchers("/api/execute/**").authenticated() // ← thêm dòng này
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 

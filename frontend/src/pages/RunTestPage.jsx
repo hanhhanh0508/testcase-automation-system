@@ -1,125 +1,35 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { PageHeader, Badge, Button, Card, SectionLabel } from '../components/ui'
 import '../components/ui.css'
 import './RunTestPage.css'
+import api from '../api'
 
-/* ── MOCK DATA ───────────────────────────────────────────────── */
-const QUEUE_ITEMS = [
-  { id: 'TC-001', status: 'pass',   time: '1.2s' },
-  { id: 'TC-002', status: 'pass',   time: '0.8s' },
-  { id: 'TC-006', status: 'running', time: ''     },
-  { id: 'TC-007', status: 'wait',   time: ''     },
-  { id: 'TC-008', status: 'wait',   time: ''     },
-  { id: 'TC-009', status: 'wait',   time: ''     },
-]
-
-const ACTIVE_TC = {
-  id:      'TC-006',
-  name:    'Checkout thành công',
-  useCase: 'Checkout',
-  actor:   'Customer',
-  type:    'Happy path',
+/* ── helpers ─────────────────────────────────────────────────── */
+const statusBadge = (s) => {
+  if (s === 'passed')  return 'pass'
+  if (s === 'failed')  return 'fail'
+  if (s === 'running') return 'running'
+  return 'pending'
 }
 
-const STEPS_DATA = [
-  {
-    n: 1,
-    title: 'Customer đã đăng nhập vào hệ thống',
-    detail: 'Precondition: user.isLoggedIn = true',
-    timing: 'Pass · 0.12s',
-    status: 'done',
-  },
-  {
-    n: 2,
-    title: 'Customer nhấn "Checkout" với giỏ hàng có 3 sản phẩm',
-    detail: 'Input cart = [{id:1,qty:2},{id:5,qty:1},{id:12,qty:3}]',
-    timing: 'Pass · 0.08s',
-    status: 'done',
-  },
-  {
-    n: 3,
-    title: 'Hệ thống gọi «include» VerifyStock — kiểm tra tồn kho',
-    detail: 'Verify VerifyStock.execute(cartItems) · Stock OK',
-    timing: 'Pass · 0.34s',
-    status: 'done',
-  },
-  {
-    n: 4,
-    title: 'Hệ thống gọi «include» Payment — xử lý thanh toán',
-    detail: 'Payment.process(amount=450000, method=CREDIT_CARD)',
-    timing: '',
-    status: 'running',
-    progress: 60,
-  },
-  {
-    n: 5,
-    title: 'Hệ thống gửi order confirmation và email',
-    detail: 'Expected: order.status = CONFIRMED; email.sent = true',
-    timing: '',
-    status: 'wait',
-  },
-  {
-    n: 6,
-    title: 'Postconditions: giỏ hàng bị xóa, hiển thị trang xác nhận',
-    detail: 'Assert cart.isEmpty = true, page = confirm',
-    timing: '',
-    status: 'wait',
-  },
-]
+const statusLabel = { pending: 'Chờ', running: 'Đang chạy', passed: 'Pass', failed: 'Fail' }
 
-const LOGS_INIT = [
-  { time: '18:24:31', level: 'INFO',  msg: 'TC-006 started' },
-  { time: '18:24:31', level: 'DEBUG', msg: 'login check = true' },
-  { time: '18:24:32', level: 'DEBUG', msg: 'cart items: 3' },
-  { time: '18:24:32', level: 'INFO',  msg: 'VerifyStock.execute() = OK' },
-  { time: '18:24:33', level: 'INFO',  msg: 'Payment.process() = IN_PROGRESS...' },
-]
-
-/* ── HELPERS ─────────────────────────────────────────────────── */
-function QueueItem({ id, status, time }) {
+function QueueItem({ code, name, status, durationMs }) {
   const cfg = {
-    pass:    { label: 'PASS', cls: 'qi-pass' },
-    fail:    { label: 'FAIL', cls: 'qi-fail' },
+    passed:  { label: 'PASS', cls: 'qi-pass' },
+    failed:  { label: 'FAIL', cls: 'qi-fail' },
     running: { label: 'RUN',  cls: 'qi-run'  },
-    wait:    { label: 'WAIT', cls: 'qi-wait' },
+    pending: { label: 'WAIT', cls: 'qi-wait' },
   }
-  const c = cfg[status] || cfg.wait
+  const c = cfg[status] || cfg.pending
   return (
     <div className={`queue-item ${status === 'running' ? 'qi-active' : ''}`}>
       <span className={`qi-badge ${c.cls}`}>{c.label}</span>
-      <span className="qi-id">{id}</span>
-      <span className="qi-time">{time}</span>
-    </div>
-  )
-}
-
-function StepRow({ step }) {
-  const isDone    = step.status === 'done'
-  const isRunning = step.status === 'running'
-  const isWait    = step.status === 'wait'
-  return (
-    <div className={`step-row ${isRunning ? 'step-running' : ''} ${isWait ? 'step-wait' : ''}`}>
-      <div className={`step-dot ${isDone ? 'dot-done' : isRunning ? 'dot-run' : 'dot-wait'}`}>
-        {isDone ? (
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        ) : (
-          step.n
-        )}
-      </div>
-      <div className="step-body">
-        <div className="step-title">{step.title}</div>
-        <div className="step-detail">{step.detail}</div>
-        {isRunning && (
-          <div className="step-progress">
-            <div className="step-bar" style={{ width: `${step.progress}%` }} />
-          </div>
-        )}
-        {step.timing && (
-          <div className="step-timing">{step.timing}</div>
-        )}
-      </div>
+      <span className="qi-id">{code || '...'}</span>
+      {durationMs != null && (
+        <span className="qi-time">{(durationMs / 1000).toFixed(1)}s</span>
+      )}
     </div>
   )
 }
@@ -137,181 +47,434 @@ function LogLine({ log }) {
 
 /* ── PAGE ────────────────────────────────────────────────────── */
 export default function RunTestPage() {
-  const [paused,   setPaused]   = useState(false)
-  const [progress, setProgress] = useState(33)
-  const [logs,     setLogs]     = useState(LOGS_INIT)
-  const logsRef = useRef(null)
+  const location   = useLocation()
+  const navigate   = useNavigate()
+  const logsRef    = useRef(null)
 
-  // simulate log ticking
+  // Danh sách id từ TestCasePage (state: {ids, diagramId})
+  const idsFromNav    = location.state?.ids || []
+  const diagramIdNav  = location.state?.diagramId || null
+
+  // ── Queue state ──
+  // Mỗi item: { id, code, name, status, durationMs, result }
+  const [queue, setQueue] = useState([])
+
+  // Đang chạy item nào (index trong queue)
+  const [runningIdx, setRunningIdx] = useState(-1)
+
+  // Trạng thái tổng
+  const [running,   setRunning]   = useState(false)
+  const [paused,    setPaused]    = useState(false)
+  const [finished,  setFinished]  = useState(false)
+  const pausedRef = useRef(false)
+
+  // Logs
+  const [logs, setLogs] = useState([])
+
+  // Kết quả hiện tại
+  const [currentResult, setCurrentResult] = useState(null)
+
+  // ── Load test case info khi mount ──
   useEffect(() => {
-    if (paused) return
-    const id = setInterval(() => {
-      const msgs = [
-        'Processing payment gateway...',
-        'Waiting for response...',
-        'Gateway responded: PENDING',
-        'Retrying (attempt 2/3)...',
-      ]
-      const rnd = msgs[Math.floor(Math.random() * msgs.length)]
-      setLogs(p => [...p.slice(-30), { time: new Date().toTimeString().slice(0, 8), level: 'DEBUG', msg: rnd }])
-      setProgress(p => Math.min(p + 1, 100))
-    }, 1800)
-    return () => clearInterval(id)
-  }, [paused])
+    if (idsFromNav.length === 0) return
 
+    // Nếu có diagramId, load từ /api/diagrams/{id}/testcases
+    // Ngược lại gọi batch
+    const loadFn = diagramIdNav
+      ? api.get(`/api/diagrams/${diagramIdNav}/testcases`)
+      : api.post('/api/testcases/batch', { ids: idsFromNav })
+
+    loadFn.then(res => {
+      const raw = res.data?.data || []
+      // Lọc chỉ lấy các id được chọn
+      const selected = diagramIdNav
+        ? raw.filter(tc => idsFromNav.includes(tc.id))
+        : raw
+
+      setQueue(selected.map(tc => ({
+        id:         tc.id,
+        code:       tc.tcCode || tc.id.slice(0, 8),
+        name:       tc.name,
+        steps:      tc.steps || [],
+        expected:   tc.expectedResult || '',
+        useCase:    tc.useCase?.name || '',
+        testType:   tc.testType,
+        status:     'pending',
+        durationMs: null,
+        result:     null,
+      })))
+    }).catch(() => {
+      addLog('ERROR', 'Không thể tải danh sách test case')
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Scroll logs ──
   useEffect(() => {
     if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight
   }, [logs])
+
+  const addLog = useCallback((level, msg) => {
+    const time = new Date().toTimeString().slice(0, 8)
+    setLogs(p => [...p.slice(-80), { time, level, msg }])
+  }, [])
+
+  // ── Cập nhật 1 item trong queue ──
+  const updateQueue = useCallback((id, patch) => {
+    setQueue(q => q.map(item => item.id === id ? { ...item, ...patch } : item))
+  }, [])
+
+  // ── Chạy từng TC tuần tự ──
+  const startRun = useCallback(async () => {
+    if (queue.length === 0) return
+    setRunning(true)
+    setFinished(false)
+    setPaused(false)
+    pausedRef.current = false
+    setCurrentResult(null)
+
+    addLog('INFO', `Bắt đầu chạy ${queue.length} test case...`)
+
+    for (let i = 0; i < queue.length; i++) {
+      // Chờ nếu đang pause
+      while (pausedRef.current) {
+        await new Promise(r => setTimeout(r, 300))
+      }
+
+      const item = queue[i]
+      setRunningIdx(i)
+      updateQueue(item.id, { status: 'running' })
+      addLog('INFO', `[${item.code}] Bắt đầu: ${item.name}`)
+
+      try {
+        const res = await api.post(`/api/execute/${item.id}`)
+        const result = res.data?.data   // TestResult object
+
+        const outcome = result?.outcome?.toLowerCase() || 'failed'
+        const status  = outcome === 'passed' ? 'passed' : 'failed'
+        const ms      = result?.durationMs || 0
+
+        updateQueue(item.id, { status, durationMs: ms, result })
+        setCurrentResult({ ...item, status, result })
+        addLog(status === 'passed' ? 'INFO' : 'ERROR',
+          `[${item.code}] ${status.toUpperCase()} (${(ms/1000).toFixed(2)}s)`)
+
+        if (result?.errorMessage) {
+          addLog('ERROR', `  ↳ ${result.errorMessage}`)
+        }
+        if (result?.actualResult) {
+          // Log từng dòng của actualResult
+          result.actualResult.split('\n').forEach(line => {
+            if (line.trim()) addLog('DEBUG', `  ${line}`)
+          })
+        }
+      } catch (err) {
+        const errMsg = err?.response?.data?.message || err.message || 'Unknown error'
+        updateQueue(item.id, { status: 'failed', durationMs: 0 })
+        addLog('ERROR', `[${item.code}] ERROR: ${errMsg}`)
+      }
+
+      // Delay nhỏ giữa các TC
+      await new Promise(r => setTimeout(r, 400))
+    }
+
+    setRunning(false)
+    setFinished(true)
+    setRunningIdx(-1)
+    addLog('INFO', '─── Hoàn thành tất cả test case ───')
+  }, [queue, updateQueue, addLog])
+
+  const handlePauseResume = () => {
+    const next = !paused
+    setPaused(next)
+    pausedRef.current = next
+    addLog('INFO', next ? '⏸ Tạm dừng' : '▶ Tiếp tục')
+  }
+
+  const handleStop = () => {
+    // Không thể thực sự dừng giữa chừng khi đang gọi API,
+    // nhưng set pause để dừng vòng lặp sau TC hiện tại
+    pausedRef.current = true
+    setPaused(true)
+    setRunning(false)
+    setFinished(true)
+    addLog('WARN', '⏹ Đã dừng bởi người dùng')
+  }
+
+  // ── Summary ──
+  const summary = {
+    total:   queue.length,
+    passed:  queue.filter(t => t.status === 'passed').length,
+    failed:  queue.filter(t => t.status === 'failed').length,
+    running: queue.filter(t => t.status === 'running').length,
+    pending: queue.filter(t => t.status === 'pending').length,
+  }
+  const passRate = summary.total > 0
+    ? Math.round(((summary.passed) / summary.total) * 100)
+    : 0
+  const progress = summary.total > 0
+    ? Math.round(((summary.passed + summary.failed) / summary.total) * 100)
+    : 0
+
+  const activeItem = runningIdx >= 0 ? queue[runningIdx] : null
+  const errors     = queue.filter(t => t.status === 'failed')
 
   return (
     <div className="run-page">
       <PageHeader
         title="Chạy Test"
-        subtitle="Thực thi test case, xem kết quả từng bước, báo cáo pass/fail"
+        subtitle="Thực thi test case với Selenium WebDriver, xem kết quả từng bước"
         right={
-          <Badge variant="running" size="md">TC-006 · In progress</Badge>
+          running
+            ? <Badge variant="running" size="md">
+                {activeItem?.code || 'Đang chạy'} · In progress
+              </Badge>
+            : finished
+            ? <Badge variant={summary.failed === 0 ? 'pass' : 'fail'} size="md">
+                {summary.failed === 0 ? '✓ Hoàn thành' : `${summary.failed} lỗi`}
+              </Badge>
+            : null
         }
       />
 
-      <div className="run-layout">
-        {/* ── COL 1: Queue ── */}
-        <div className="run-col-queue">
-          <Card>
-            <SectionLabel>Hàng đợi chạy ({QUEUE_ITEMS.length})</SectionLabel>
+      {/* Nếu không có TC nào được chọn */}
+      {queue.length === 0 && (
+        <Card>
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+            <p style={{ marginBottom: 12 }}>Chưa có test case nào được chọn.</p>
+            <Button variant="secondary" size="md" onClick={() => navigate('/testcases')}>
+              ← Quay lại chọn test case
+            </Button>
+          </div>
+        </Card>
+      )}
 
-            <div className="queue-progress-row">
-              <span className="qp-label">Tiến độ</span>
-              <span className="qp-val">2 / 6</span>
-            </div>
-            <div className="queue-bar-bg">
-              <div className="queue-bar-fg" style={{ width: `${(2/6)*100}%` }} />
-            </div>
+      {queue.length > 0 && (
+        <div className="run-layout">
+          {/* ── COL 1: Queue ── */}
+          <div className="run-col-queue">
+            <Card>
+              <SectionLabel>Hàng đợi ({queue.length})</SectionLabel>
 
-            <div className="queue-list">
-              {QUEUE_ITEMS.map(q => <QueueItem key={q.id} {...q} />)}
-            </div>
+              <div className="queue-progress-row">
+                <span className="qp-label">Tiến độ</span>
+                <span className="qp-val">{summary.passed + summary.failed} / {summary.total}</span>
+              </div>
+              <div className="queue-bar-bg">
+                <div className="queue-bar-fg" style={{ width: `${progress}%` }} />
+              </div>
 
-            <div className="queue-actions">
-              <Button
-                variant={paused ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setPaused(p => !p)}
-              >
-                {paused ? '▶ Tiếp tục' : '⏸ Tạm dừng'}
-              </Button>
-              <Button variant="danger" size="sm">⏹ Dừng</Button>
-            </div>
-          </Card>
-        </div>
+              <div className="queue-list">
+                {queue.map(item => (
+                  <QueueItem key={item.id} {...item} />
+                ))}
+              </div>
 
-        {/* ── COL 2: Steps + Logs ── */}
-        <div className="run-col-main">
-          <Card>
-            <div className="active-tc-header">
-              <div>
-                <div className="active-tc-title">{ACTIVE_TC.id} — {ACTIVE_TC.name}</div>
-                <div className="active-tc-meta">
-                  Use case: {ACTIVE_TC.useCase} · Actor: {ACTIVE_TC.actor} · {ACTIVE_TC.type}
+              <div className="queue-actions">
+                {!running && !finished && (
+                  <Button variant="primary" size="sm" onClick={startRun}
+                    style={{ flex: 1, justifyContent: 'center' }}>
+                    ▶ Bắt đầu
+                  </Button>
+                )}
+                {running && (
+                  <>
+                    <Button
+                      variant={paused ? 'primary' : 'secondary'}
+                      size="sm"
+                      onClick={handlePauseResume}
+                    >
+                      {paused ? '▶ Tiếp tục' : '⏸ Dừng'}
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={handleStop}>⏹</Button>
+                  </>
+                )}
+                {finished && (
+                  <Button variant="secondary" size="sm"
+                    onClick={() => navigate('/testcases')}
+                    style={{ flex: 1, justifyContent: 'center' }}>
+                    ← Quay lại
+                  </Button>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          {/* ── COL 2: Active TC + Logs ── */}
+          <div className="run-col-main">
+            <Card>
+              {activeItem ? (
+                <>
+                  <div className="active-tc-header">
+                    <div>
+                      <div className="active-tc-title">
+                        {activeItem.code} — {activeItem.name}
+                      </div>
+                      <div className="active-tc-meta">
+                        Use case: {activeItem.useCase} · {activeItem.testType}
+                      </div>
+                    </div>
+                    <Badge variant="running">Đang chạy</Badge>
+                  </div>
+
+                  <SectionLabel>Các bước ({activeItem.steps.length})</SectionLabel>
+                  <div className="steps-list">
+                    {activeItem.steps.map((step, i) => (
+                      <div key={i} className="step-row">
+                        <div className="step-dot dot-run">{i + 1}</div>
+                        <div className="step-body">
+                          <div className="step-title">{step}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {activeItem.steps.length === 0 && (
+                      <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>
+                        Đang thực thi...
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : currentResult ? (
+                /* Hiển thị kết quả TC vừa xong */
+                <div>
+                  <div className="active-tc-header">
+                    <div>
+                      <div className="active-tc-title">
+                        {currentResult.code} — {currentResult.name}
+                      </div>
+                      <div className="active-tc-meta">Use case: {currentResult.useCase}</div>
+                    </div>
+                    <Badge variant={statusBadge(currentResult.status)} size="md">
+                      {statusLabel[currentResult.status] || currentResult.status}
+                    </Badge>
+                  </div>
+                  {currentResult.result?.errorMessage && (
+                    <div style={{
+                      background: 'var(--danger-bg)', border: '1px solid #fecaca',
+                      borderRadius: 'var(--radius-md)', padding: '10px 14px',
+                      fontSize: 12, color: 'var(--danger)', lineHeight: 1.55
+                    }}>
+                      <strong>Lỗi:</strong> {currentResult.result.errorMessage}
+                    </div>
+                  )}
+                  {!running && !finished && (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
+                      Nhấn "Bắt đầu" để chạy test case.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  {finished ? 'Đã hoàn thành tất cả test case.' : 'Nhấn "Bắt đầu" để chạy.'}
+                </div>
+              )}
+            </Card>
+
+            {/* Console */}
+            <Card>
+              <SectionLabel>Console log</SectionLabel>
+              <div className="log-panel" ref={logsRef}>
+                {logs.length === 0 && (
+                  <span style={{ color: '#484f58' }}>Chờ chạy test...</span>
+                )}
+                {logs.map((l, i) => <LogLine key={i} log={l} />)}
+              </div>
+            </Card>
+          </div>
+
+          {/* ── COL 3: Results ── */}
+          <div className="run-col-results">
+            <Card>
+              <SectionLabel>Kết quả</SectionLabel>
+              <div className="result-grid">
+                <div className="result-cell rc-pass">
+                  <span className="rc-num">{summary.passed}</span>
+                  <span className="rc-lbl">Pass</span>
+                </div>
+                <div className="result-cell rc-fail">
+                  <span className="rc-num">{summary.failed}</span>
+                  <span className="rc-lbl">Fail</span>
+                </div>
+                <div className="result-cell rc-run">
+                  <span className="rc-num">{summary.running}</span>
+                  <span className="rc-lbl">Running</span>
+                </div>
+                <div className="result-cell rc-pending">
+                  <span className="rc-num">{summary.pending}</span>
+                  <span className="rc-lbl">Pending</span>
                 </div>
               </div>
-              <Badge variant="running">Đang chạy</Badge>
-            </div>
 
-            <SectionLabel>Các bước thực hiện</SectionLabel>
+              <div className="pass-rate-section">
+                <div className="pass-rate-row">
+                  <span className="pr-label">Pass rate</span>
+                  <span className="pr-val">{passRate}%</span>
+                </div>
+                <div className="pr-bar-bg">
+                  <div className="pr-bar-fg" style={{ width: `${passRate}%` }} />
+                </div>
+                <div className="pr-note">{summary.passed + summary.failed} / {summary.total} hoàn thành</div>
+              </div>
+            </Card>
 
-            <div className="steps-list">
-              {STEPS_DATA.map(s => <StepRow key={s.n} step={s} />)}
-            </div>
-          </Card>
+            {/* Errors */}
+            <Card>
+              <SectionLabel>Chi tiết lỗi ({errors.length})</SectionLabel>
+              {errors.length === 0 ? (
+                <div className="no-error">Chưa có lỗi nào ✓</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {errors.map(e => (
+                    <div key={e.id} style={{
+                      background: 'var(--danger-bg)', border: '1px solid #fecaca',
+                      borderRadius: 'var(--radius-sm)', padding: '8px 10px'
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--danger)', fontFamily: 'var(--font-mono)', marginBottom: 3 }}>
+                        {e.code}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--danger)', lineHeight: 1.4 }}>
+                        {e.result?.errorMessage
+                          ? e.result.errorMessage.slice(0, 120) + (e.result.errorMessage.length > 120 ? '...' : '')
+                          : 'Thực thi thất bại'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
 
-          <Card>
-            <SectionLabel>Console log</SectionLabel>
-            <div className="log-panel" ref={logsRef}>
-              {logs.map((l, i) => <LogLine key={i} log={l} />)}
-            </div>
-          </Card>
+            {/* Export */}
+            <Card>
+              <SectionLabel>Báo cáo</SectionLabel>
+              <div className="report-btns">
+                <Button
+                  variant="secondary" size="sm" className="full-w"
+                  disabled={!finished}
+                  onClick={() => {
+                    const data = queue.map(t => ({
+                      code: t.code, name: t.name,
+                      status: t.status, durationMs: t.durationMs,
+                      error: t.result?.errorMessage || null,
+                    }))
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                    const url  = URL.createObjectURL(blob)
+                    const a    = document.createElement('a')
+                    a.href = url; a.download = `run-report-${Date.now()}.json`; a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Export JSON report
+                </Button>
+              </div>
+            </Card>
+          </div>
         </div>
-
-        {/* ── COL 3: Results ── */}
-        <div className="run-col-results">
-          <Card>
-            <SectionLabel>Kết quả hiện tại</SectionLabel>
-            <div className="result-grid">
-              <div className="result-cell rc-pass">
-                <span className="rc-num">2</span>
-                <span className="rc-lbl">Pass</span>
-              </div>
-              <div className="result-cell rc-fail">
-                <span className="rc-num">0</span>
-                <span className="rc-lbl">Fail</span>
-              </div>
-              <div className="result-cell rc-run">
-                <span className="rc-num">1</span>
-                <span className="rc-lbl">Running</span>
-              </div>
-              <div className="result-cell rc-pending">
-                <span className="rc-num">3</span>
-                <span className="rc-lbl">Pending</span>
-              </div>
-            </div>
-
-            <div className="pass-rate-section">
-              <div className="pass-rate-row">
-                <span className="pr-label">Pass rate</span>
-                <span className="pr-val">{Math.round((2/6)*100)}%</span>
-              </div>
-              <div className="pr-bar-bg">
-                <div className="pr-bar-fg" style={{ width: `${(2/6)*100}%` }} />
-              </div>
-              <div className="pr-note">2 / 6 hoàn thành</div>
-            </div>
-          </Card>
-
-          <Card>
-            <SectionLabel>Chi tiết lỗi</SectionLabel>
-            <div className="no-error">Chưa có lỗi nào ✓</div>
-          </Card>
-
-          <Card>
-            <SectionLabel>Báo cáo</SectionLabel>
-            <div className="report-btns">
-              <Button variant="secondary" size="sm" className="full-w">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                </svg>
-                Export PDF report
-              </Button>
-              <Button variant="secondary" size="sm" className="full-w">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Export Excel
-              </Button>
-              <Button variant="secondary" size="sm" className="full-w">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-                Share link
-              </Button>
-            </div>
-          </Card>
-
-          <Card>
-            <SectionLabel>Cấu hình môi trường</SectionLabel>
-            <div className="env-form">
-              <label className="env-label">Base URL</label>
-              <input className="env-input" defaultValue="http://localhost:8080" />
-              <label className="env-label">Timeout (ms)</label>
-              <input className="env-input" defaultValue="5000" type="number" />
-            </div>
-          </Card>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
