@@ -11,9 +11,64 @@
   font-weight: 600;
   padding: 4px 12px;
   border-radius: 20px;
-  margin-top: 4px;
   display: inline-block;
 }
+
+/* ── Diagram selector ───────────────────────────────────────── */
+.diagram-select {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  outline: none;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  max-width: 220px;
+  transition: var(--transition);
+}
+
+.diagram-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
+}
+
+/* ── Error bar ──────────────────────────────────────────────── */
+.tc-error-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--danger-bg);
+  border: 1px solid #fecaca;
+  color: var(--danger);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+/* ── Loading state ──────────────────────────────────────────── */
+.tc-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 40px;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.tc-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Layout ─────────────────────────────────────────────── */
 .tc-layout {
@@ -219,14 +274,4 @@
   color: var(--text-muted);
   font-size: 13px;
   padding: 40px !important;
-}
-
-.table-footer {
-  text-align: center;
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 10px;
-  border-top: 1px solid var(--border-light);
-  background: var(--bg-base);
-  font-style: italic;
 }

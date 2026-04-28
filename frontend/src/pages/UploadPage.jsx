@@ -5,34 +5,6 @@ import '../components/ui.css'
 import './UploadPage.css'
 import api from '../api'
 
-const API = 'http://localhost:8080/api/diagrams'
-const doUpload = async (f) => {
-  setLoading(true)
-  try {
-    const fd = new FormData()
-    fd.append('file', f)
-    fd.append('name', projectName)
-    const res = await api.post('/api/diagrams/upload', fd)
-    setDiagramId(res.data.data.id)
-    setParsed(MOCK_PARSED) // vẫn dùng mock cho phần hiển thị
-  } catch {
-    setError('Upload thất bại')
-  } finally {
-    setLoading(false)
-  }
-}
-
-const handleGenerate = async () => {
-  setGenerating(true)
-  try {
-    await api.post(`/api/diagrams/${diagramId}/generate`)
-    navigate('/testcases', { state: { diagramId } })
-  } catch {
-    setError('Sinh test case thất bại')
-  } finally {
-    setGenerating(false)
-  }
-}
 /* ── helpers ─────────────────────────────────────────────────── */
 function detectExt(filename = '') {
   const ext = filename.split('.').pop().toLowerCase()
@@ -75,9 +47,7 @@ function RelBox({ relationships }) {
       <SectionLabel>Include / Extend</SectionLabel>
       {relationships.map((r, i) => (
         <div key={i} className="rel-row">
-          <span className={`rel-tag ${tagCls[r.type] || 'rel-inc'}`}>
-            «{r.type}»
-          </span>
+          <span className={`rel-tag ${tagCls[r.type] || 'rel-inc'}`}>«{r.type}»</span>
           <span className="rel-text">{r.from} → {r.to}</span>
         </div>
       ))}
@@ -85,17 +55,17 @@ function RelBox({ relationships }) {
   )
 }
 
-/* ── MOCK DATA ───────────────────────────────────────────────── */
+/* ── MOCK PARSED (hiển thị demo cấu trúc, thực tế sẽ parse từ file) ── */
 const MOCK_PARSED = {
   stats: { actors: 5, useCases: 18, relationships: 24 },
   actors: [
     { name: 'Customer', initial: 'C', useCases: ['Login / Logout', 'View product', 'Add to cart'], extra: 0 },
-    { name: 'Admin', initial: 'A', useCases: ['Manage products', 'Manage orders', 'View reports'], extra: 2 },
+    { name: 'Admin',    initial: 'A', useCases: ['Manage products', 'Manage orders', 'View reports'], extra: 2 },
   ],
   relationships: [
-    { type: 'include', from: 'Checkout', to: 'Payment' },
-    { type: 'include', from: 'Checkout', to: 'Verify stock' },
-    { type: 'extend',  from: 'Login',    to: '2FA verify' },
+    { type: 'include', from: 'Checkout',  to: 'Payment'      },
+    { type: 'include', from: 'Checkout',  to: 'Verify stock'  },
+    { type: 'extend',  from: 'Login',     to: '2FA verify'   },
   ],
 }
 
@@ -104,24 +74,71 @@ export default function UploadPage() {
   const navigate = useNavigate()
   const fileRef  = useRef(null)
 
-  const [dragOver,    setDragOver]    = useState(false)
-  const [file,        setFile]        = useState(null)
-  const [parsed,      setParsed]      = useState(null)   // truthy = file parsed
-  const [loading,     setLoading]     = useState(false)
-  const [generating,  setGenerating]  = useState(false)
-  const [error,       setError]       = useState(null)
-  const [diagramId,   setDiagramId]   = useState(null)
+  const [dragOver,   setDragOver]   = useState(false)
+  const [file,       setFile]       = useState(null)
+  const [parsed,     setParsed]     = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [error,      setError]      = useState(null)
+  const [diagramId,  setDiagramId]  = useState(null)
+  const [genSuccess, setGenSuccess] = useState(false)
 
   /* config state */
-  const [projectName, setProjectName] = useState('Online Shop System')
+  const [projectName, setProjectName] = useState('')
   const [testType,    setTestType]    = useState('Functional')
   const [language,    setLanguage]    = useState('vi')
   const [includes,    setIncludes]    = useState({
     happy: true, negative: true, boundary: true, performance: false,
   })
 
-  /* ── file handling ── */
-  const ALLOWED = ['xmi','xml','puml','plantuml','drawio','json']
+  /* ── doUpload — nằm TRONG component để dùng state ── */
+  const doUpload = async (f) => {
+    setLoading(true)
+    setError(null)
+    setParsed(null)
+    setDiagramId(null)
+    setGenSuccess(false)
+
+    try {
+      const fd = new FormData()
+      fd.append('file', f)
+      if (projectName.trim()) fd.append('name', projectName.trim())
+
+      const res = await api.post('/api/diagrams/upload', fd)
+      const data = res.data?.data
+      if (data?.id) setDiagramId(data.id)
+      setParsed(MOCK_PARSED)
+    } catch (err) {
+      // Backend offline hoặc lỗi → vẫn hiển thị mock để demo UI
+      console.warn('Upload backend error:', err?.response?.data || err.message)
+      setParsed(MOCK_PARSED)
+      setError('Upload thất bại (backend offline?). Đang dùng dữ liệu demo.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /* ── handleGenerate — nằm TRONG component ── */
+  const handleGenerate = async () => {
+    if (!parsed) { setError('Vui lòng upload file trước'); return }
+    setGenerating(true)
+    setError(null)
+
+    try {
+      if (diagramId) {
+        await api.post(`/api/diagrams/${diagramId}/generate`)
+        setGenSuccess(true)
+      }
+      // Chờ 500ms để user thấy feedback rồi chuyển trang
+      setTimeout(() => navigate('/testcases'), 600)
+    } catch (err) {
+      setError('Sinh test case thất bại: ' + (err?.response?.data?.message || err.message))
+      setGenerating(false)
+    }
+  }
+
+  /* ── File handling ── */
+  const ALLOWED = ['xmi', 'xml', 'puml', 'plantuml', 'drawio', 'json']
 
   const handleFile = (f) => {
     if (!f) return
@@ -135,49 +152,14 @@ export default function UploadPage() {
     doUpload(f)
   }
 
-  const doUpload = async (f) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const fd = new FormData()
-      fd.append('file', f)
-      if (projectName) fd.append('name', projectName)
-      const res = await fetch(`${API}/upload`, { method: 'POST', body: fd })
-      const data = await res.json()
-      setDiagramId(data?.data?.id)
-      setParsed(MOCK_PARSED)
-    } catch {
-      // backend offline → dùng mock
-      setParsed(MOCK_PARSED)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleGenerate = async () => {
-    if (!parsed) { setError('Vui lòng upload file trước'); return }
-    setGenerating(true)
-    try {
-      if (diagramId) {
-        await fetch(`${API}/${diagramId}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectName, testType, language, includes }),
-        })
-      }
-    } catch { /* ignore */ }
-    setGenerating(false)
-    navigate('/testcases')
-  }
-
   const toggleInclude = (k) => setIncludes(p => ({ ...p, [k]: !p[k] }))
 
-  /* ── render ── */
+  /* ── Render ── */
   return (
     <div className="upload-page">
       <PageHeader
         title="Upload Use Case Diagram"
-        subtitle="Người dùng tải file UML lên và cấu hình trước khi sinh test case"
+        subtitle="Tải file UML lên, cấu hình và sinh test case tự động"
       />
 
       <div className="upload-grid">
@@ -204,7 +186,7 @@ export default function UploadPage() {
               {loading ? (
                 <div className="dz-loading">
                   <Spinner size={24} />
-                  <span className="dz-loading-text">Đang phân tích file...</span>
+                  <span className="dz-loading-text">Đang upload và phân tích file...</span>
                 </div>
               ) : (
                 <>
@@ -215,13 +197,14 @@ export default function UploadPage() {
                       <line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
                   </div>
-                  <div className="dz-title">Kéo thả file vào đây</div>
+                  <div className="dz-title">
+                    {parsed ? `✓ ${file?.name}` : 'Kéo thả file vào đây'}
+                  </div>
                   <div className="dz-formats">Hỗ trợ: .xmi · .xml · .puml · .drawio · .json</div>
                   <div className="dz-btns" onClick={(e) => e.stopPropagation()}>
                     <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
-                      Chọn file
+                      {parsed ? 'Chọn file khác' : 'Chọn file'}
                     </Button>
-                    <Button variant="secondary" size="sm">Paste URL</Button>
                   </div>
                 </>
               )}
@@ -247,8 +230,8 @@ export default function UploadPage() {
                 <span className="badge-parsed">Parsed OK</span>
               </div>
               <div className="stats-row">
-                <StatPill n={parsed.stats.actors}        label="Actors" />
-                <StatPill n={parsed.stats.useCases}      label="Use Cases" />
+                <StatPill n={parsed.stats.actors}        label="Actors"        />
+                <StatPill n={parsed.stats.useCases}      label="Use Cases"     />
                 <StatPill n={parsed.stats.relationships} label="Relationships" />
               </div>
             </Card>
@@ -259,7 +242,7 @@ export default function UploadPage() {
             <div className="error-bar">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="8"  x2="12"    y2="12"/>
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
               {error}
@@ -302,10 +285,10 @@ export default function UploadPage() {
               <label className="form-label">Bao gồm test case cho</label>
               <div className="cb-row">
                 {[
-                  { k: 'happy',       l: 'Happy path' },
+                  { k: 'happy',       l: 'Happy path'    },
                   { k: 'negative',    l: 'Negative case' },
-                  { k: 'boundary',    l: 'Boundary' },
-                  { k: 'performance', l: 'Performance' },
+                  { k: 'boundary',    l: 'Boundary'      },
+                  { k: 'performance', l: 'Performance'   },
                 ].map(({ k, l }) => (
                   <label key={k} className="cb-item">
                     <input type="checkbox" checked={includes[k]} onChange={() => toggleInclude(k)} />
@@ -324,6 +307,8 @@ export default function UploadPage() {
               >
                 {generating
                   ? <><Spinner size={13} /> Đang sinh...</>
+                  : genSuccess
+                  ? '✓ Thành công!'
                   : 'Sinh test case →'}
               </Button>
               <Button variant="secondary" size="md" disabled={!parsed}>

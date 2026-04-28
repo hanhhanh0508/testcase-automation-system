@@ -1,4 +1,5 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import './MainLayout.css'
 
 const NAV = [
@@ -18,12 +19,12 @@ const NAV = [
     label: 'Danh sách',
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="8" y1="6" x2="21" y2="6"/>
-        <line x1="8" y1="12" x2="21" y2="12"/>
-        <line x1="8" y1="18" x2="21" y2="18"/>
-        <line x1="3" y1="6" x2="3.01" y2="6"/>
-        <line x1="3" y1="12" x2="3.01" y2="12"/>
-        <line x1="3" y1="18" x2="3.01" y2="18"/>
+        <line x1="8"  y1="6"  x2="21"    y2="6"/>
+        <line x1="8"  y1="12" x2="21"    y2="12"/>
+        <line x1="8"  y1="18" x2="21"    y2="18"/>
+        <line x1="3"  y1="6"  x2="3.01"  y2="6"/>
+        <line x1="3"  y1="12" x2="3.01"  y2="12"/>
+        <line x1="3"  y1="18" x2="3.01"  y2="18"/>
       </svg>
     ),
   },
@@ -50,11 +51,21 @@ const NAV = [
 ]
 
 export default function MainLayout() {
-  const loc = useLocation()
+  const { logout, user } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login', { replace: true })
+  }
+
+  // Lấy chữ cái đầu của username để làm avatar
+  const avatar = user?.username?.charAt(0)?.toUpperCase() || 'U'
 
   return (
     <div className="layout">
       <aside className="sidebar">
+        {/* Brand */}
         <div className="sidebar-brand">
           <div className="brand-logo">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -68,6 +79,7 @@ export default function MainLayout() {
           </div>
         </div>
 
+        {/* Nav */}
         <nav className="sidebar-nav">
           {NAV.map(item => (
             <NavLink
@@ -81,10 +93,31 @@ export default function MainLayout() {
           ))}
         </nav>
 
+        {/* Footer: user info + logout */}
         <div className="sidebar-footer">
           <div className="env-badge">
             <span className="env-dot" />
             localhost:8080
+          </div>
+
+          {/* User row */}
+          <div className="user-row">
+            <div className="user-avatar">{avatar}</div>
+            <div className="user-info">
+              <div className="user-name">{user?.username || 'User'}</div>
+              <div className="user-email">{user?.email || ''}</div>
+            </div>
+            <button
+              className="logout-btn"
+              onClick={handleLogout}
+              title="Đăng xuất"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </button>
           </div>
         </div>
       </aside>
