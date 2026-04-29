@@ -15,6 +15,29 @@ const statusBadge = (s) => {
 
 const statusLabel = { pending: 'Chờ', running: 'Đang chạy', passed: 'Pass', failed: 'Fail' }
 
+/* Tách step thành loại để hiển thị màu sắc */
+function stepType(step) {
+  const u = step.toUpperCase()
+  if (u.startsWith('HTTP '))             return 'http'
+  if (u.startsWith('EXPECT_'))           return 'expect'
+  if (u.startsWith('INPUT '))            return 'input'
+  if (u.startsWith('===') || u.startsWith('---')) return 'section'
+  return 'info'
+}
+
+const stepDotClass = {
+  http:    'dot-http',
+  expect:  'dot-expect',
+  input:   'dot-input',
+  section: 'dot-section',
+  info:    'dot-wait',
+}
+
+function StepBadge({ type }) {
+  const labels = { http: 'HTTP', expect: 'ASSERT', input: 'INPUT', section: '─', info: 'INFO' }
+  return <span className={`step-type-badge step-type-${type}`}>{labels[type] || 'INFO'}</span>
+}
+
 function QueueItem({ code, name, status, durationMs }) {
   const cfg = {
     passed:  { label: 'PASS', cls: 'qi-pass' },
@@ -35,7 +58,7 @@ function QueueItem({ code, name, status, durationMs }) {
 }
 
 function LogLine({ log }) {
-  const lvlCls = { INFO: 'log-info', DEBUG: 'log-debug', ERROR: 'log-error', WARN: 'log-warn' }
+  const lvlCls = { INFO: 'log-info', DEBUG: 'log-debug', ERROR: 'log-error', WARN: 'log-warn', HTTP: 'log-http' }
   return (
     <div className="log-line">
       <span className="log-time">[{log.time}]</span>
@@ -47,84 +70,62 @@ function LogLine({ log }) {
 
 /* ── PAGE ────────────────────────────────────────────────────── */
 export default function RunTestPage() {
-  const location   = useLocation()
-  const navigate   = useNavigate()
-  const logsRef    = useRef(null)
+  const location  = useLocation()
+  const navigate  = useNavigate()
+  const logsRef   = useRef(null)
 
-  // Danh sách id từ TestCasePage (state: {ids, diagramId})
-  const idsFromNav    = location.state?.ids || []
-  const diagramIdNav  = location.state?.diagramId || null
+  const idsFromNav   = location.state?.ids || []
+  const diagramIdNav = location.state?.diagramId || null
 
-  // ── Queue state ──
-  // Mỗi item: { id, code, name, status, durationMs, result }
-  const [queue, setQueue] = useState([])
-
-  // Đang chạy item nào (index trong queue)
-  const [runningIdx, setRunningIdx] = useState(-1)
-
-  // Trạng thái tổng
-  const [running,   setRunning]   = useState(false)
-  const [paused,    setPaused]    = useState(false)
-  const [finished,  setFinished]  = useState(false)
+  const [queue,        setQueue]        = useState([])
+  const [runningIdx,   setRunningIdx]   = useState(-1)
+  const [running,      setRunning]      = useState(false)
+  const [paused,       setPaused]       = useState(false)
+  const [finished,     setFinished]     = useState(false)
+  const [logs,         setLogs]         = useState([])
+  const [currentResult, setCurrentResult] = useState(null)
   const pausedRef = useRef(false)
 
-  // Logs
-  const [logs, setLogs] = useState([])
-
-  // Kết quả hiện tại
-  const [currentResult, setCurrentResult] = useState(null)
-
-  // ── Load test case info khi mount ──
   useEffect(() => {
     if (idsFromNav.length === 0) return
-
-    // Nếu có diagramId, load từ /api/diagrams/{id}/testcases
-    // Ngược lại gọi batch
     const loadFn = diagramIdNav
       ? api.get(`/api/diagrams/${diagramIdNav}/testcases`)
       : api.post('/api/testcases/batch', { ids: idsFromNav })
 
     loadFn.then(res => {
       const raw = res.data?.data || []
-      // Lọc chỉ lấy các id được chọn
       const selected = diagramIdNav
         ? raw.filter(tc => idsFromNav.includes(tc.id))
         : raw
-
       setQueue(selected.map(tc => ({
-        id:         tc.id,
-        code:       tc.tcCode || tc.id.slice(0, 8),
-        name:       tc.name,
-        steps:      tc.steps || [],
-        expected:   tc.expectedResult || '',
-        useCase:    tc.useCase?.name || '',
-        testType:   tc.testType,
-        status:     'pending',
+        id:       tc.id,
+        code:     tc.tcCode || tc.id.slice(0, 8),
+        name:     tc.name,
+        steps:    tc.steps || [],
+        expected: tc.expectedResult || '',
+        useCase:  tc.useCase?.name || '',
+        testType: tc.testType,
+        status:   'pending',
         durationMs: null,
-        result:     null,
+        result:   null,
       })))
-    }).catch(() => {
-      addLog('ERROR', 'Không thể tải danh sách test case')
-    })
+    }).catch(() => addLog('ERROR', 'Không thể tải danh sách test case'))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Scroll logs ──
   useEffect(() => {
     if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight
   }, [logs])
 
   const addLog = useCallback((level, msg) => {
     const time = new Date().toTimeString().slice(0, 8)
-    setLogs(p => [...p.slice(-80), { time, level, msg }])
+    setLogs(p => [...p.slice(-100), { time, level, msg }])
   }, [])
 
-  // ── Cập nhật 1 item trong queue ──
   const updateQueue = useCallback((id, patch) => {
     setQueue(q => q.map(item => item.id === id ? { ...item, ...patch } : item))
   }, [])
 
-  // ── Chạy từng TC tuần tự ──
   const startRun = useCallback(async () => {
     if (queue.length === 0) return
     setRunning(true)
@@ -132,11 +133,10 @@ export default function RunTestPage() {
     setPaused(false)
     pausedRef.current = false
     setCurrentResult(null)
-
-    addLog('INFO', `Bắt đầu chạy ${queue.length} test case...`)
+    addLog('INFO', `▶ Bắt đầu chạy ${queue.length} test case qua HTTP...`)
+    addLog('INFO', 'Engine: RestTemplate (API-based testing)')
 
     for (let i = 0; i < queue.length; i++) {
-      // Chờ nếu đang pause
       while (pausedRef.current) {
         await new Promise(r => setTimeout(r, 300))
       }
@@ -144,37 +144,42 @@ export default function RunTestPage() {
       const item = queue[i]
       setRunningIdx(i)
       updateQueue(item.id, { status: 'running' })
-      addLog('INFO', `[${item.code}] Bắt đầu: ${item.name}`)
+      addLog('INFO', `[${item.code}] → ${item.name}`)
 
       try {
-        const res = await api.post(`/api/execute/${item.id}`)
-        const result = res.data?.data   // TestResult object
-
+        const res    = await api.post(`/api/execute/${item.id}`)
+        const result = res.data?.data
         const outcome = result?.outcome?.toLowerCase() || 'failed'
         const status  = outcome === 'passed' ? 'passed' : 'failed'
         const ms      = result?.durationMs || 0
 
         updateQueue(item.id, { status, durationMs: ms, result })
         setCurrentResult({ ...item, status, result })
+
         addLog(status === 'passed' ? 'INFO' : 'ERROR',
           `[${item.code}] ${status.toUpperCase()} (${(ms/1000).toFixed(2)}s)`)
 
         if (result?.errorMessage) {
-          addLog('ERROR', `  ↳ ${result.errorMessage}`)
+          addLog('ERROR', `  ✗ ${result.errorMessage}`)
         }
         if (result?.actualResult) {
-          // Log từng dòng của actualResult
-          result.actualResult.split('\n').forEach(line => {
-            if (line.trim()) addLog('DEBUG', `  ${line}`)
+          // Hiện các dòng log từ executor
+          result.actualResult.split('\n').slice(0, 10).forEach(line => {
+            if (line.trim()) {
+              const lvl = line.startsWith('  ✓') ? 'INFO'
+                        : line.startsWith('  ✗') ? 'ERROR'
+                        : line.startsWith('  →') ? 'HTTP'
+                        : 'DEBUG'
+              addLog(lvl, line.trim())
+            }
           })
         }
       } catch (err) {
-        const errMsg = err?.response?.data?.message || err.message || 'Unknown error'
+        const msg = err?.response?.data?.message || err.message || 'Unknown error'
         updateQueue(item.id, { status: 'failed', durationMs: 0 })
-        addLog('ERROR', `[${item.code}] ERROR: ${errMsg}`)
+        addLog('ERROR', `[${item.code}] ERROR: ${msg}`)
       }
 
-      // Delay nhỏ giữa các TC
       await new Promise(r => setTimeout(r, 400))
     }
 
@@ -192,8 +197,6 @@ export default function RunTestPage() {
   }
 
   const handleStop = () => {
-    // Không thể thực sự dừng giữa chừng khi đang gọi API,
-    // nhưng set pause để dừng vòng lặp sau TC hiện tại
     pausedRef.current = true
     setPaused(true)
     setRunning(false)
@@ -201,7 +204,6 @@ export default function RunTestPage() {
     addLog('WARN', '⏹ Đã dừng bởi người dùng')
   }
 
-  // ── Summary ──
   const summary = {
     total:   queue.length,
     passed:  queue.filter(t => t.status === 'passed').length,
@@ -209,21 +211,16 @@ export default function RunTestPage() {
     running: queue.filter(t => t.status === 'running').length,
     pending: queue.filter(t => t.status === 'pending').length,
   }
-  const passRate = summary.total > 0
-    ? Math.round(((summary.passed) / summary.total) * 100)
-    : 0
-  const progress = summary.total > 0
-    ? Math.round(((summary.passed + summary.failed) / summary.total) * 100)
-    : 0
-
+  const passRate = summary.total > 0 ? Math.round((summary.passed / summary.total) * 100) : 0
+  const progress = summary.total > 0 ? Math.round(((summary.passed + summary.failed) / summary.total) * 100) : 0
   const activeItem = runningIdx >= 0 ? queue[runningIdx] : null
   const errors     = queue.filter(t => t.status === 'failed')
 
   return (
     <div className="run-page">
       <PageHeader
-        title="Chạy Test"
-        subtitle="Thực thi test case với Selenium WebDriver, xem kết quả từng bước"
+        title="Chạy Test (API-based)"
+        subtitle="Thực thi test case qua HTTP RestTemplate — không cần trình duyệt"
         right={
           running
             ? <Badge variant="running" size="md">
@@ -231,13 +228,20 @@ export default function RunTestPage() {
               </Badge>
             : finished
             ? <Badge variant={summary.failed === 0 ? 'pass' : 'fail'} size="md">
-                {summary.failed === 0 ? '✓ Hoàn thành' : `${summary.failed} lỗi`}
+                {summary.failed === 0 ? '✓ All Passed' : `${summary.failed} Failed`}
               </Badge>
             : null
         }
       />
 
-      {/* Nếu không có TC nào được chọn */}
+      {/* Engine info banner */}
+      <div className="engine-banner">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span>Engine: <strong>RestTemplate HTTP</strong> — gọi API trực tiếp, kiểm tra status code &amp; response body</span>
+      </div>
+
       {queue.length === 0 && (
         <Card>
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -255,46 +259,33 @@ export default function RunTestPage() {
           <div className="run-col-queue">
             <Card>
               <SectionLabel>Hàng đợi ({queue.length})</SectionLabel>
-
               <div className="queue-progress-row">
                 <span className="qp-label">Tiến độ</span>
-                <span className="qp-val">{summary.passed + summary.failed} / {summary.total}</span>
+                <span className="qp-val">{summary.passed + summary.failed}/{summary.total}</span>
               </div>
               <div className="queue-bar-bg">
                 <div className="queue-bar-fg" style={{ width: `${progress}%` }} />
               </div>
-
               <div className="queue-list">
-                {queue.map(item => (
-                  <QueueItem key={item.id} {...item} />
-                ))}
+                {queue.map(item => <QueueItem key={item.id} {...item} />)}
               </div>
-
               <div className="queue-actions">
                 {!running && !finished && (
-                  <Button variant="primary" size="sm" onClick={startRun}
-                    style={{ flex: 1, justifyContent: 'center' }}>
+                  <Button variant="primary" size="sm" onClick={startRun} style={{ flex: 1, justifyContent: 'center' }}>
                     ▶ Bắt đầu
                   </Button>
                 )}
                 {running && (
                   <>
-                    <Button
-                      variant={paused ? 'primary' : 'secondary'}
-                      size="sm"
-                      onClick={handlePauseResume}
-                    >
-                      {paused ? '▶ Tiếp tục' : '⏸ Dừng'}
+                    <Button variant={paused ? 'primary' : 'secondary'} size="sm" onClick={handlePauseResume}>
+                      {paused ? '▶' : '⏸'}
                     </Button>
                     <Button variant="danger" size="sm" onClick={handleStop}>⏹</Button>
                   </>
                 )}
                 {finished && (
-                  <Button variant="secondary" size="sm"
-                    onClick={() => navigate('/testcases')}
-                    style={{ flex: 1, justifyContent: 'center' }}>
-                    ← Quay lại
-                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => navigate('/testcases')}
+                    style={{ flex: 1, justifyContent: 'center' }}>← Quay lại</Button>
                 )}
               </div>
             </Card>
@@ -307,65 +298,58 @@ export default function RunTestPage() {
                 <>
                   <div className="active-tc-header">
                     <div>
-                      <div className="active-tc-title">
-                        {activeItem.code} — {activeItem.name}
-                      </div>
-                      <div className="active-tc-meta">
-                        Use case: {activeItem.useCase} · {activeItem.testType}
-                      </div>
+                      <div className="active-tc-title">{activeItem.code} — {activeItem.name}</div>
+                      <div className="active-tc-meta">Use case: {activeItem.useCase} · {activeItem.testType}</div>
                     </div>
-                    <Badge variant="running">Đang chạy</Badge>
+                    <Badge variant="running">Đang chạy HTTP</Badge>
                   </div>
 
-                  <SectionLabel>Các bước ({activeItem.steps.length})</SectionLabel>
+                  <SectionLabel>Kịch bản ({activeItem.steps.length} bước)</SectionLabel>
                   <div className="steps-list">
-                    {activeItem.steps.map((step, i) => (
-                      <div key={i} className="step-row">
-                        <div className="step-dot dot-run">{i + 1}</div>
-                        <div className="step-body">
-                          <div className="step-title">{step}</div>
+                    {activeItem.steps.map((step, i) => {
+                      const sType = stepType(step)
+                      return (
+                        <div key={i} className={`step-row ${sType === 'section' ? 'step-section' : ''}`}>
+                          {sType !== 'section' && (
+                            <div className={`step-dot ${stepDotClass[sType] || 'dot-wait'}`}>{i + 1}</div>
+                          )}
+                          <div className="step-body">
+                            {sType !== 'section' && <StepBadge type={sType} />}
+                            <span className={`step-title ${sType === 'section' ? 'step-section-title' : ''}`}>
+                              {step}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                    {activeItem.steps.length === 0 && (
-                      <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>
-                        Đang thực thi...
-                      </p>
-                    )}
+                      )
+                    })}
                   </div>
                 </>
               ) : currentResult ? (
-                /* Hiển thị kết quả TC vừa xong */
                 <div>
                   <div className="active-tc-header">
                     <div>
-                      <div className="active-tc-title">
-                        {currentResult.code} — {currentResult.name}
-                      </div>
+                      <div className="active-tc-title">{currentResult.code} — {currentResult.name}</div>
                       <div className="active-tc-meta">Use case: {currentResult.useCase}</div>
                     </div>
                     <Badge variant={statusBadge(currentResult.status)} size="md">
-                      {statusLabel[currentResult.status] || currentResult.status}
+                      {statusLabel[currentResult.status]}
                     </Badge>
                   </div>
                   {currentResult.result?.errorMessage && (
-                    <div style={{
-                      background: 'var(--danger-bg)', border: '1px solid #fecaca',
-                      borderRadius: 'var(--radius-md)', padding: '10px 14px',
-                      fontSize: 12, color: 'var(--danger)', lineHeight: 1.55
-                    }}>
+                    <div className="error-detail-box">
                       <strong>Lỗi:</strong> {currentResult.result.errorMessage}
                     </div>
                   )}
-                  {!running && !finished && (
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
-                      Nhấn "Bắt đầu" để chạy test case.
-                    </p>
+                  {currentResult.result?.actualResult && (
+                    <div className="result-log-box">
+                      <SectionLabel>Log thực thi</SectionLabel>
+                      <pre className="result-pre">{currentResult.result.actualResult}</pre>
+                    </div>
                   )}
                 </div>
               ) : (
                 <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                  {finished ? 'Đã hoàn thành tất cả test case.' : 'Nhấn "Bắt đầu" để chạy.'}
+                  {finished ? 'Đã hoàn thành tất cả.' : 'Nhấn "Bắt đầu" để chạy test qua HTTP.'}
                 </div>
               )}
             </Card>
@@ -374,9 +358,7 @@ export default function RunTestPage() {
             <Card>
               <SectionLabel>Console log</SectionLabel>
               <div className="log-panel" ref={logsRef}>
-                {logs.length === 0 && (
-                  <span style={{ color: '#484f58' }}>Chờ chạy test...</span>
-                )}
+                {logs.length === 0 && <span style={{ color: '#484f58' }}>Chờ chạy test...</span>}
                 {logs.map((l, i) => <LogLine key={i} log={l} />)}
               </div>
             </Card>
@@ -404,7 +386,6 @@ export default function RunTestPage() {
                   <span className="rc-lbl">Pending</span>
                 </div>
               </div>
-
               <div className="pass-rate-section">
                 <div className="pass-rate-row">
                   <span className="pr-label">Pass rate</span>
@@ -413,7 +394,7 @@ export default function RunTestPage() {
                 <div className="pr-bar-bg">
                   <div className="pr-bar-fg" style={{ width: `${passRate}%` }} />
                 </div>
-                <div className="pr-note">{summary.passed + summary.failed} / {summary.total} hoàn thành</div>
+                <div className="pr-note">{summary.passed + summary.failed}/{summary.total} hoàn thành</div>
               </div>
             </Card>
 
@@ -421,7 +402,7 @@ export default function RunTestPage() {
             <Card>
               <SectionLabel>Chi tiết lỗi ({errors.length})</SectionLabel>
               {errors.length === 0 ? (
-                <div className="no-error">Chưa có lỗi nào ✓</div>
+                <div className="no-error">Không có lỗi ✓</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {errors.map(e => (
@@ -435,7 +416,7 @@ export default function RunTestPage() {
                       <div style={{ fontSize: 11, color: 'var(--danger)', lineHeight: 1.4 }}>
                         {e.result?.errorMessage
                           ? e.result.errorMessage.slice(0, 120) + (e.result.errorMessage.length > 120 ? '...' : '')
-                          : 'Thực thi thất bại'}
+                          : 'HTTP request thất bại'}
                       </div>
                     </div>
                   ))}
@@ -452,8 +433,7 @@ export default function RunTestPage() {
                   disabled={!finished}
                   onClick={() => {
                     const data = queue.map(t => ({
-                      code: t.code, name: t.name,
-                      status: t.status, durationMs: t.durationMs,
+                      code: t.code, name: t.name, status: t.status, durationMs: t.durationMs,
                       error: t.result?.errorMessage || null,
                     }))
                     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -463,11 +443,6 @@ export default function RunTestPage() {
                     URL.revokeObjectURL(url)
                   }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
                   Export JSON report
                 </Button>
               </div>

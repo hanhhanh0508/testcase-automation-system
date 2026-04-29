@@ -2,14 +2,14 @@ package com.testcase.backend.controller;
 
 import com.testcase.backend.dto.ApiResponseDTO;
 import com.testcase.backend.entity.TestResult;
-import com.testcase.backend.service.SeleniumExecutorService;
+import com.testcase.backend.service.ApiExecutorService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
 /**
- * Endpoints thực thi test case bằng Selenium.
+ * Thực thi Test Case qua HTTP (RestTemplate-based, không dùng Selenium).
  *
  * POST /api/execute/{id} → chạy 1 test case
  * POST /api/execute/batch → chạy nhiều test case (body: {"ids":
@@ -19,9 +19,9 @@ import java.util.*;
 @RequestMapping("/api/execute")
 public class ExecutionController {
 
-    private final SeleniumExecutorService executorService;
+    private final ApiExecutorService executorService;
 
-    public ExecutionController(SeleniumExecutorService executorService) {
+    public ExecutionController(ApiExecutorService executorService) {
         this.executorService = executorService;
     }
 
@@ -30,7 +30,7 @@ public class ExecutionController {
     public ResponseEntity<ApiResponseDTO<TestResult>> executeOne(@PathVariable UUID id) {
         try {
             TestResult result = executorService.execute(id);
-            String msg = result.getOutcome().name().equals("PASSED")
+            String msg = "PASSED".equals(result.getOutcome().name())
                     ? "Test case PASSED ✓"
                     : "Test case " + result.getOutcome().name();
             return ResponseEntity.ok(ApiResponseDTO.ok(msg, result));
@@ -43,7 +43,6 @@ public class ExecutionController {
     /**
      * Chạy nhiều test case tuần tự.
      * Body: { "ids": ["uuid1", "uuid2", ...] }
-     * Response: { "results": { "uuid1": {...}, "uuid2": {...} } }
      */
     @PostMapping("/batch")
     public ResponseEntity<ApiResponseDTO<Map<String, Object>>> executeBatch(
@@ -58,9 +57,8 @@ public class ExecutionController {
             List<UUID> ids = rawIds.stream().map(UUID::fromString).toList();
             Map<UUID, TestResult> resultMap = executorService.executeBatch(ids);
 
-            // Tính summary
-            long passed = resultMap.values().stream().filter(r -> r.getOutcome().name().equals("PASSED")).count();
-            long failed = resultMap.values().stream().filter(r -> !r.getOutcome().name().equals("PASSED")).count();
+            long passed = resultMap.values().stream().filter(r -> "PASSED".equals(r.getOutcome().name())).count();
+            long failed = resultMap.values().stream().filter(r -> !"PASSED".equals(r.getOutcome().name())).count();
             int totalMs = resultMap.values().stream()
                     .mapToInt(r -> r.getDurationMs() != null ? r.getDurationMs() : 0).sum();
 

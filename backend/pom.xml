@@ -36,7 +36,7 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- JWT — chỉ giữ 1 bộ duy nhất (0.12.6) -->
+        <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
@@ -80,17 +80,22 @@
             <version>2.1.4</version>
         </dependency>
 
-        <!-- Selenium -->
+        <!-- ── EXPORT: Apache POI (Excel .xlsx) ── -->
         <dependency>
-            <groupId>org.seleniumhq.selenium</groupId>
-            <artifactId>selenium-java</artifactId>
-            <version>4.20.0</version>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
         </dependency>
+
+        <!-- ── EXPORT: OpenPDF (PDF generation, open-source iText fork) ── -->
         <dependency>
-            <groupId>io.github.bonigarcia</groupId>
-            <artifactId>webdrivermanager</artifactId>
-            <version>5.8.0</version>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>1.3.30</version>
         </dependency>
+
+        <!-- ── HTTP CLIENT: RestTemplate (có sẵn trong spring-boot-starter-web) ── -->
+        <!-- Không cần thêm dependency riêng, RestTemplate đã có trong spring-web -->
 
         <!-- Test -->
         <dependency>

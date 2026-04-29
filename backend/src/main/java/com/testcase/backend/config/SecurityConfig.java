@@ -32,7 +32,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/diagrams/**").authenticated()
                         .requestMatchers("/api/testcases/**").authenticated()
-                        .requestMatchers("/api/execute/**").authenticated() // ← thêm dòng này
+                        .requestMatchers("/api/execute/**").authenticated()
+                        .requestMatchers("/api/export/**").authenticated() // ← xuất file
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
