@@ -80,22 +80,22 @@
             <version>2.1.4</version>
         </dependency>
 
-        <!-- ── EXPORT: Apache POI (Excel .xlsx) ── -->
+        <!-- EXPORT: Apache POI (Excel .xlsx) -->
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>5.2.5</version>
         </dependency>
 
-        <!-- ── EXPORT: OpenPDF (PDF generation, open-source iText fork) ── -->
+        <!-- EXPORT: OpenPDF (PDF generation) -->
         <dependency>
             <groupId>com.github.librepdf</groupId>
             <artifactId>openpdf</artifactId>
             <version>1.3.30</version>
         </dependency>
 
-        <!-- ── HTTP CLIENT: RestTemplate (có sẵn trong spring-boot-starter-web) ── -->
-        <!-- Không cần thêm dependency riêng, RestTemplate đã có trong spring-web -->
+        <!-- HTTP CLIENT: RestTemplate (spring-boot-starter-web includes it) -->
+        <!-- No separate dependency needed -->
 
         <!-- Test -->
         <dependency>
