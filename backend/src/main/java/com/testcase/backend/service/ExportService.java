@@ -1,24 +1,35 @@
 package com.testcase.backend.service;
 
+// Import thẳng Font của PDF
+// --- Thư viện PDF (OpenPDF) ---
 import com.lowagie.text.*;
-import com.lowagie.text.Font;
 import com.lowagie.text.pdf.*;
+import org.apache.poi.ss.util.CellRangeAddress;
+// --- Thư viện Excel (Apache POI) ---
+import org.apache.poi.ss.usermodel.Row; // Import thẳng Row của Excel
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
+import org.apache.poi.ss.usermodel.VerticalAlignment;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.xssf.usermodel.*;
+
+// --- Thư viện Hệ thống & Java ---
+import java.awt.Color; // Import thẳng Color của Java AWT
+import java.io.ByteArrayOutputStream;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+
+// Các repository và entity của bạn...
 import com.testcase.backend.entity.TestCase;
 import com.testcase.backend.entity.UseCaseDiagram;
 import com.testcase.backend.enums.TestCaseStatus;
 import com.testcase.backend.repository.TestCaseRepository;
 import com.testcase.backend.repository.UseCaseDiagramRepository;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.util.CellRangeAddress;
-import org.apache.poi.xssf.usermodel.*;
-import org.springframework.stereotype.Service;
-
-import java.awt.*;
-import java.io.ByteArrayOutputStream;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.UUID;
 
 /**
  * Xuất danh sách Test Case ra file Excel (.xlsx) hoặc PDF.
@@ -35,11 +46,9 @@ public class ExportService {
 
     private final TestCaseRepository testCaseRepository;
     private final UseCaseDiagramRepository diagramRepository;
-
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-    public ExportService(TestCaseRepository testCaseRepository,
-            UseCaseDiagramRepository diagramRepository) {
+    public ExportService(TestCaseRepository testCaseRepository, UseCaseDiagramRepository diagramRepository) {
         this.testCaseRepository = testCaseRepository;
         this.diagramRepository = diagramRepository;
     }
@@ -305,7 +314,8 @@ public class ExportService {
                         Font secFont = FontFactory.getFont(
                                 FontFactory.HELVETICA_BOLD, 8, Color.decode("#57606a"));
                         ListItem item = new ListItem(new Phrase(step, secFont));
-                        item.setListSymbol("  ");
+                        // Thay vì: item.setListSymbol(" ");
+                        item.setListSymbol(new com.lowagie.text.Chunk("  "));
                         stepList.add(item);
                     } else {
                         stepList.add(new ListItem(new Phrase(step, dataFont)));
@@ -382,11 +392,20 @@ public class ExportService {
         XSSFFont f = wb.createFont();
         f.setBold(true);
         f.setFontHeightInPoints((short) 9);
+
+        // Sử dụng Switch cũ nếu Java < 17, hoặc giữ nguyên nếu Java >= 17
         switch (status) {
-            case PASSED -> f.setColor(IndexedColors.DARK_GREEN.getIndex());
-            case FAILED -> f.setColor(IndexedColors.RED.getIndex());
-            case RUNNING -> f.setColor(IndexedColors.DARK_BLUE.getIndex());
-            default -> f.setColor(IndexedColors.GREY_50_PERCENT.getIndex());
+            case PASSED:
+                f.setColor(IndexedColors.DARK_GREEN.getIndex());
+                break;
+            case FAILED:
+                f.setColor(IndexedColors.RED.getIndex());
+                break;
+            case RUNNING:
+                f.setColor(IndexedColors.DARK_BLUE.getIndex());
+                break;
+            default:
+                f.setColor(IndexedColors.GREY_50_PERCENT.getIndex());
         }
         s.setFont(f);
         s.setAlignment(HorizontalAlignment.CENTER);
@@ -394,8 +413,8 @@ public class ExportService {
         return s;
     }
 
-    private void setCellValue(Row row, int col, String value, CellStyle style) {
-        Cell cell = row.createCell(col);
+    private void setCellValue(org.apache.poi.ss.usermodel.Row row, int col, String value, CellStyle style) {
+        org.apache.poi.ss.usermodel.Cell cell = row.createCell(col);
         cell.setCellValue(value != null ? value : "");
         cell.setCellStyle(style);
     }
@@ -404,32 +423,48 @@ public class ExportService {
     // HELPERS — PDF
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void addPdfCell(PdfPTable table, String text, Font font, Color bg, boolean center) {
+    private void addPdfCell(PdfPTable table, String text, com.lowagie.text.Font font, java.awt.Color bg,
+            boolean center) {
         PdfPCell cell = new PdfPCell(new Phrase(text != null ? text : "", font));
-        cell.setBackgroundColor(bg);
+        if (bg != null) {
+            cell.setBackgroundColor(bg);
+        }
         cell.setPadding(5);
-        cell.setBorderColor(Color.decode("#e2e8f0"));
+        cell.setBorderColor(new java.awt.Color(226, 232, 240)); // Thay Color.decode nếu lỗi
         cell.setHorizontalAlignment(center ? Element.ALIGN_CENTER : Element.ALIGN_LEFT);
         cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
         table.addCell(cell);
     }
 
-    private Font getStatusFont(TestCaseStatus status) {
-        return switch (status) {
-            case PASSED -> FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.decode("#16a34a"));
-            case FAILED -> FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.decode("#dc2626"));
-            case RUNNING -> FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.decode("#2563eb"));
-            default -> FontFactory.getFont(FontFactory.HELVETICA, 9, Color.decode("#64748b"));
-        };
+    private com.lowagie.text.Font getStatusFont(TestCaseStatus status) {
+        java.awt.Color color;
+        switch (status) {
+            case PASSED:
+                color = new java.awt.Color(22, 163, 74);
+                break;
+            case FAILED:
+                color = new java.awt.Color(220, 38, 38);
+                break;
+            case RUNNING:
+                color = new java.awt.Color(37, 99, 235);
+                break;
+            default:
+                color = new java.awt.Color(100, 116, 139);
+        }
+        return FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, color);
     }
 
-    private Color statusBg(TestCaseStatus status) {
-        return switch (status) {
-            case PASSED -> Color.decode("#dcfce7");
-            case FAILED -> Color.decode("#fee2e2");
-            case RUNNING -> Color.decode("#dbeafe");
-            default -> Color.decode("#f1f5f9");
-        };
+    private java.awt.Color statusBg(TestCaseStatus status) {
+        switch (status) {
+            case PASSED:
+                return new java.awt.Color(220, 252, 231);
+            case FAILED:
+                return new java.awt.Color(254, 226, 230);
+            case RUNNING:
+                return new java.awt.Color(219, 234, 254);
+            default:
+                return new java.awt.Color(241, 245, 249);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -214,7 +214,11 @@ public class ApiExecutorService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.ALL));
-        ctx.headers.forEach(headers::addIfAbsent);
+        ctx.headers.forEach((key, values) -> {
+            for (String value : values) {
+                headers.addIfAbsent(key, value);
+            }
+        });
 
         HttpEntity<String> entity = new HttpEntity<>(
                 (body != null && !body.isEmpty()) ? body : null, headers);
