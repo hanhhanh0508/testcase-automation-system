@@ -12,6 +12,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.http.HttpMethod;
 
 @Configuration
 @EnableWebSecurity
@@ -26,14 +27,18 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                .cors(cors -> {
+                }) // ← thêm dòng này để enable CORS
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // ← thêm dòng này
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/diagrams/**").authenticated()
+                        // xóa dòng permitAll của upload
+                        .requestMatchers("/api/diagrams/**").authenticated() // ← giữ nguyên
                         .requestMatchers("/api/testcases/**").authenticated()
                         .requestMatchers("/api/execute/**").authenticated()
-                        .requestMatchers("/api/export/**").authenticated() // ← xuất file
+                        .requestMatchers("/api/export/**").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
