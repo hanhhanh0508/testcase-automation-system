@@ -1,0 +1,43 @@
+{
+  "diagramName": "Auth System (Quick Test)",
+  "actors": [
+    {
+      "xmiId": "A1",
+      "name": "User",
+      "actorType": "PRIMARY",
+      "description": "Người dùng hệ thống"
+    }
+  ],
+  "useCases": [
+    {
+      "xmiId": "UC1",
+      "name": "Register",
+      "description": "Người dùng đăng ký tài khoản mới",
+      "preconditions": ["Email chưa được đăng ký"],
+      "postconditions": ["Tài khoản được tạo thành công", "Token JWT được trả về"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC2",
+      "name": "Login",
+      "description": "Người dùng đăng nhập",
+      "preconditions": ["Tài khoản đã tồn tại"],
+      "postconditions": ["JWT token hợp lệ được cấp"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC3",
+      "name": "Logout",
+      "description": "Người dùng đăng xuất",
+      "preconditions": ["Đã đăng nhập"],
+      "postconditions": ["Phiên bị hủy"],
+      "priority": "MEDIUM"
+    }
+  ],
+  "relationships": [
+    { "sourceXmiId": "A1", "targetXmiId": "UC1", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC2", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC3", "type": "ASSOCIATION" },
+    { "sourceXmiId": "UC2", "targetXmiId": "UC1", "type": "EXTEND" }
+  ]
+}

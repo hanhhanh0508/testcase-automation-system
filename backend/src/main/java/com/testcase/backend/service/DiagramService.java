@@ -19,15 +19,17 @@ import java.util.UUID;
 public class DiagramService {
 
     private final UseCaseDiagramRepository diagramRepository;
+    private final JsonDiagramParser jsonDiagramParser;
 
-    // Thư mục lưu file upload
     private static final String UPLOAD_DIR = "uploads/";
 
-    public DiagramService(UseCaseDiagramRepository diagramRepository) {
+    public DiagramService(UseCaseDiagramRepository diagramRepository,
+            JsonDiagramParser jsonDiagramParser) {
         this.diagramRepository = diagramRepository;
+        this.jsonDiagramParser = jsonDiagramParser;
     }
 
-    // ── Nhận input dạng text ──────────────────────────────────
+    // Nhận input dạng text
     public UseCaseDiagram createFromText(UseCaseInputDTO dto) {
         String name = dto.getDiagramName() != null
                 ? dto.getDiagramName()
@@ -40,13 +42,12 @@ public class DiagramService {
         return diagramRepository.save(diagram);
     }
 
-    // ── Nhận input dạng file upload ───────────────────────────
+    // Nhận input dạng file upload
     public UseCaseDiagram createFromFile(MultipartFile file, String diagramName) throws IOException {
-        // Xác định format từ tên file
         String filename = file.getOriginalFilename();
         SourceFormat format = detectFormat(filename);
 
-        // Lưu file vào thư mục uploads/
+        // Lưu file
         Path uploadPath = Paths.get(UPLOAD_DIR);
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
@@ -55,19 +56,33 @@ public class DiagramService {
         Path filePath = uploadPath.resolve(savedFileName);
         Files.write(filePath, file.getBytes());
 
-        // Tạo bản ghi trong DB
+        // Tên diagram
         String name = (diagramName != null && !diagramName.isBlank())
                 ? diagramName
                 : filename;
 
         UseCaseDiagram diagram = new UseCaseDiagram(name, format);
         diagram.setFilePath(filePath.toString());
-        diagram.setStatus(DiagramStatus.UPLOADED);
+        diagram.setStatus(DiagramStatus.PARSING);
+
+        // Parse nội dung nếu là JSON
+        if (format == SourceFormat.JSON) {
+            try {
+                jsonDiagramParser.parse(file.getInputStream(), diagram);
+                diagram.setStatus(DiagramStatus.PARSED);
+            } catch (Exception e) {
+                diagram.setStatus(DiagramStatus.ERROR);
+                diagram.setDescription("Parse error: " + e.getMessage());
+            }
+        } else {
+            // Các format khác (XMI, PlantUML, DrawIO) để UPLOADED
+            // — có thể mở rộng parser sau
+            diagram.setStatus(DiagramStatus.UPLOADED);
+        }
 
         return diagramRepository.save(diagram);
     }
 
-    // ── Lấy danh sách diagram ─────────────────────────────────
     public List<UseCaseDiagram> getAllDiagrams() {
         return diagramRepository.findAll();
     }
@@ -77,7 +92,6 @@ public class DiagramService {
                 .orElseThrow(() -> new RuntimeException("Diagram not found: " + id));
     }
 
-    // ── Detect format từ đuôi file ────────────────────────────
     private SourceFormat detectFormat(String filename) {
         if (filename == null)
             return SourceFormat.JSON;

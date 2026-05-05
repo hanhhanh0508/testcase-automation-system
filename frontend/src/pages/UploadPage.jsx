@@ -105,8 +105,13 @@ export default function UploadPage() {
       if (projectName.trim()) fd.append('name', projectName.trim())
 
       const res = await api.post('/api/diagrams/upload', fd)
+      console.log('Upload response:', res.data)  // ← thêm dòng này
+
       const data = res.data?.data
-      if (data?.id) setDiagramId(data.id)
+      if (data?.id) {
+        console.log('Diagram ID saved:', data.id)  // ← và dòng này
+        setDiagramId(data.id)
+      }
       setParsed(MOCK_PARSED)
     } catch (err) {
       // Backend offline hoặc lỗi → vẫn hiển thị mock để demo UI

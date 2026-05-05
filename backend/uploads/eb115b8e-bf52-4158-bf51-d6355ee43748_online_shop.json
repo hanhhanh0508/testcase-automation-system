@@ -1,0 +1,120 @@
+{
+  "diagramName": "Online Shop System",
+  "actors": [
+    {
+      "xmiId": "A1",
+      "name": "Customer",
+      "actorType": "PRIMARY",
+      "description": "Khách hàng mua sắm trực tuyến"
+    },
+    {
+      "xmiId": "A2",
+      "name": "Admin",
+      "actorType": "PRIMARY",
+      "description": "Quản trị viên hệ thống"
+    },
+    {
+      "xmiId": "A3",
+      "name": "Payment Gateway",
+      "actorType": "SECONDARY",
+      "description": "Cổng thanh toán bên thứ ba"
+    }
+  ],
+  "useCases": [
+    {
+      "xmiId": "UC1",
+      "name": "Login",
+      "description": "Khách hàng đăng nhập vào hệ thống",
+      "preconditions": ["Khách hàng đã có tài khoản", "Hệ thống đang hoạt động"],
+      "postconditions": ["Khách hàng được xác thực", "JWT token được cấp"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC2",
+      "name": "Register",
+      "description": "Khách hàng đăng ký tài khoản mới",
+      "preconditions": ["Email chưa được đăng ký"],
+      "postconditions": ["Tài khoản mới được tạo", "Email xác nhận được gửi"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC3",
+      "name": "View Product List",
+      "description": "Khách hàng xem danh sách sản phẩm",
+      "preconditions": ["Hệ thống có ít nhất 1 sản phẩm"],
+      "postconditions": ["Danh sách sản phẩm được hiển thị"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC4",
+      "name": "Search Product",
+      "description": "Khách hàng tìm kiếm sản phẩm theo từ khóa",
+      "preconditions": ["Khách hàng đang ở trang danh sách sản phẩm"],
+      "postconditions": ["Kết quả tìm kiếm được hiển thị"],
+      "priority": "MEDIUM"
+    },
+    {
+      "xmiId": "UC5",
+      "name": "Add to Cart",
+      "description": "Khách hàng thêm sản phẩm vào giỏ hàng",
+      "preconditions": ["Khách hàng đã đăng nhập", "Sản phẩm còn hàng"],
+      "postconditions": ["Sản phẩm được thêm vào giỏ hàng", "Số lượng tồn kho giảm 1"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC6",
+      "name": "Checkout",
+      "description": "Khách hàng thanh toán đơn hàng",
+      "preconditions": ["Giỏ hàng có ít nhất 1 sản phẩm", "Khách hàng đã đăng nhập"],
+      "postconditions": ["Đơn hàng được tạo", "Thanh toán được xử lý"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC7",
+      "name": "Payment",
+      "description": "Xử lý thanh toán qua cổng thanh toán",
+      "preconditions": ["Đơn hàng đã được tạo"],
+      "postconditions": ["Giao dịch được xác nhận hoặc từ chối"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC8",
+      "name": "Manage Products",
+      "description": "Admin thêm, sửa, xóa sản phẩm",
+      "preconditions": ["Admin đã đăng nhập", "Admin có quyền quản lý sản phẩm"],
+      "postconditions": ["Danh sách sản phẩm được cập nhật"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC9",
+      "name": "View Orders",
+      "description": "Admin xem danh sách đơn hàng",
+      "preconditions": ["Admin đã đăng nhập"],
+      "postconditions": ["Danh sách đơn hàng được hiển thị"],
+      "priority": "MEDIUM"
+    },
+    {
+      "xmiId": "UC10",
+      "name": "Logout",
+      "description": "Người dùng đăng xuất khỏi hệ thống",
+      "preconditions": ["Người dùng đã đăng nhập"],
+      "postconditions": ["Phiên đăng nhập bị hủy", "Token bị vô hiệu hóa"],
+      "priority": "MEDIUM"
+    }
+  ],
+  "relationships": [
+    { "sourceXmiId": "A1", "targetXmiId": "UC1", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC2", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC3", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC4", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC5", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC6", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC10", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A2", "targetXmiId": "UC8", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A2", "targetXmiId": "UC9", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A3", "targetXmiId": "UC7", "type": "ASSOCIATION" },
+    { "sourceXmiId": "UC6", "targetXmiId": "UC7", "type": "INCLUDE" },
+    { "sourceXmiId": "UC3", "targetXmiId": "UC4", "type": "EXTEND" },
+    { "sourceXmiId": "UC5", "targetXmiId": "UC3", "type": "EXTEND" }
+  ]
+}
