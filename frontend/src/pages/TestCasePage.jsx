@@ -40,7 +40,6 @@ function DetailModal({ tc, onClose, onRun }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div className="modal-header">
           <div className="modal-title-row">
             <span className="modal-tc-code">{tc.code}</span>
@@ -60,7 +59,6 @@ function DetailModal({ tc, onClose, onRun }) {
           </button>
         </div>
 
-        {/* Steps */}
         <div className="modal-body">
           <SectionLabel>Các bước thực hiện ({tc.steps.length})</SectionLabel>
           {tc.steps.length > 0 ? (
@@ -84,7 +82,6 @@ function DetailModal({ tc, onClose, onRun }) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="modal-footer">
           <Button variant="secondary" size="md" onClick={onClose}>Đóng</Button>
           <Button variant="primary" size="md" onClick={() => { onRun(tc); onClose(); }}>
@@ -99,7 +96,7 @@ function DetailModal({ tc, onClose, onRun }) {
   )
 }
 
-/* ── Generate toast ──────────────────────────────────────────── */
+/* ── Toast ───────────────────────────────────────────────────── */
 function Toast({ msg, type, onClose }) {
   useEffect(() => {
     const t = setTimeout(onClose, 3500)
@@ -121,30 +118,17 @@ function Toast({ msg, type, onClose }) {
 export default function TestCasePage() {
   const navigate = useNavigate()
 
-  // Diagram
   const [diagrams,          setDiagrams]          = useState([])
   const [selectedDiagramId, setSelectedDiagramId] = useState(null)
-
-  // Test cases
   const [allTc,    setAllTc]    = useState([])
   const [loading,  setLoading]  = useState(false)
   const [loadErr,  setLoadErr]  = useState(null)
-
-  // Generating
   const [generating, setGenerating] = useState(false)
-
-  // Filters
   const [search,  setSearch]  = useState('')
   const [selUC,   setSelUC]   = useState('Tất cả')
   const [selType, setSelType] = useState('all')
-
-  // Selection
   const [checked, setChecked] = useState(new Set())
-
-  // Modal
   const [detailTc, setDetailTc] = useState(null)
-
-  // Toast
   const [toast, setToast] = useState(null)
 
   const showToast = (msg, type = 'success') => setToast({ msg, type })
@@ -160,7 +144,7 @@ export default function TestCasePage() {
       .catch(() => setLoadErr('Không thể tải danh sách diagram'))
   }, [])
 
-  /* Load test cases khi đổi diagram */
+  /* Load test cases */
   const loadTestCases = useCallback((diagramId) => {
     if (!diagramId) return
     setLoading(true)
@@ -182,7 +166,7 @@ export default function TestCasePage() {
     loadTestCases(selectedDiagramId)
   }, [selectedDiagramId, loadTestCases])
 
-  /* Sinh test case */
+  /* Generate */
   const handleGenerate = async () => {
     if (!selectedDiagramId) { showToast('Chưa chọn diagram', 'error'); return }
     setGenerating(true)
@@ -190,13 +174,61 @@ export default function TestCasePage() {
       const res = await api.post(`/api/diagrams/${selectedDiagramId}/generate`)
       const count = res.data?.data?.length || 0
       showToast(`Sinh thành công ${count} test case!`)
-      loadTestCases(selectedDiagramId)  // reload
+      loadTestCases(selectedDiagramId)
     } catch (err) {
       const msg = err?.response?.data?.message || err.message
       showToast('Sinh thất bại: ' + msg, 'error')
     } finally {
       setGenerating(false)
     }
+  }
+
+  /* Export Excel */
+  const exportExcel = async () => {
+    if (!selectedDiagramId) { showToast('Chưa chọn diagram', 'error'); return }
+    try {
+      const res = await api.get(`/api/export/${selectedDiagramId}/excel`, {
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `testcases-${selectedDiagramId.slice(0, 8)}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('Đã xuất file Excel!')
+    } catch {
+      showToast('Xuất Excel thất bại', 'error')
+    }
+  }
+
+  /* Export PDF */
+  const exportPdf = async () => {
+    if (!selectedDiagramId) { showToast('Chưa chọn diagram', 'error'); return }
+    try {
+      const res = await api.get(`/api/export/${selectedDiagramId}/pdf`, {
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `testcases-${selectedDiagramId.slice(0, 8)}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('Đã xuất file PDF!')
+    } catch {
+      showToast('Xuất PDF thất bại', 'error')
+    }
+  }
+
+  /* Export JSON */
+  const exportJSON = () => {
+    const data = filtered.filter(tc => checked.size === 0 || checked.has(tc.id))
+    const blob  = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url   = URL.createObjectURL(blob)
+    const a     = document.createElement('a'); a.href = url
+    a.download  = `testcases-${selectedDiagramId?.slice(0, 8) || 'export'}.json`
+    a.click(); URL.revokeObjectURL(url)
   }
 
   /* Sidebar use-case list */
@@ -236,16 +268,6 @@ export default function TestCasePage() {
     else            setChecked(new Set(filtered.map(tc => tc.id)))
   }
 
-  /* Export JSON */
-  const exportJSON = () => {
-    const data = filtered.filter(tc => checked.size === 0 || checked.has(tc.id))
-    const blob  = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url   = URL.createObjectURL(blob)
-    const a     = document.createElement('a'); a.href = url
-    a.download  = `testcases-${selectedDiagramId?.slice(0, 8) || 'export'}.json`
-    a.click(); URL.revokeObjectURL(url)
-  }
-
   /* Run */
   const runSelected = (singleTc = null) => {
     const ids = singleTc
@@ -253,11 +275,10 @@ export default function TestCasePage() {
       : checked.size > 0
         ? [...checked]
         : filtered.map(tc => tc.id)
-
     navigate('/run', { state: { ids, diagramId: selectedDiagramId } })
   }
 
-  /* Stats bar */
+  /* Stats */
   const stats = useMemo(() => ({
     total:   allTc.length,
     pending: allTc.filter(t => t.status === 'pending').length,
@@ -267,12 +288,10 @@ export default function TestCasePage() {
 
   return (
     <div className="tc-page">
-      {/* Toast */}
       {toast && (
         <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />
       )}
 
-      {/* Detail modal */}
       <DetailModal
         tc={detailTc}
         onClose={() => setDetailTc(null)}
@@ -423,8 +442,44 @@ export default function TestCasePage() {
               )}
             </span>
             <div className="toolbar-actions">
-              <Button variant="secondary" size="sm" onClick={exportJSON} disabled={allTc.length === 0}>
-                Export JSON
+              {/* ── Export buttons ── */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={exportExcel}
+                disabled={allTc.length === 0}
+                title="Xuất Excel (.xlsx)"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                  <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                Excel
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={exportPdf}
+                disabled={allTc.length === 0}
+                title="Xuất PDF"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                PDF
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={exportJSON}
+                disabled={allTc.length === 0}
+                title="Xuất JSON"
+              >
+                JSON
               </Button>
               <Button
                 variant="primary"

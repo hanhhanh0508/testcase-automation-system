@@ -353,3 +353,96 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
 }
+/* ── Thêm vào cuối file frontend/src/pages/RunTestPage.css ── */
+
+/* Engine banner */
+.engine-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 12px;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.engine-banner strong {
+  font-weight: 600;
+}
+
+/* Step type badges */
+.step-type-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.4px;
+  font-family: var(--font-mono);
+  margin-right: 7px;
+  vertical-align: middle;
+}
+
+.step-type-http    { background: #dbeafe; color: #1d4ed8; }
+.step-type-expect  { background: var(--success-bg); color: var(--success); }
+.step-type-input   { background: var(--warning-bg); color: var(--warning); }
+.step-type-section { background: #f1f5f9; color: #64748b; }
+.step-type-info    { background: #f1f5f9; color: #64748b; }
+
+/* Step dot overrides for HTTP/expect/input */
+.dot-http   { background: #dbeafe; color: #1d4ed8; border: 1.5px solid #93c5fd; }
+.dot-expect { background: var(--success-bg); color: var(--success); border: 1.5px solid #86efac; }
+.dot-input  { background: var(--warning-bg); color: var(--warning); border: 1.5px solid #fcd34d; }
+.step-section { opacity: 0.6; }
+.step-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Error detail box */
+.error-detail-box {
+  background: var(--danger-bg);
+  border: 1px solid #fecaca;
+  color: var(--danger);
+  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  line-height: 1.55;
+}
+
+/* Result log box */
+.result-log-box {
+  margin-top: 12px;
+}
+
+.result-pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #e6edf3;
+  background: #0d1117;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+}
+
+/* Log level colors */
+.log-level {
+  font-weight: 600;
+  font-size: 10px;
+  min-width: 44px;
+  font-family: var(--font-mono);
+}
+
+.log-http { color: #f0883e; }
