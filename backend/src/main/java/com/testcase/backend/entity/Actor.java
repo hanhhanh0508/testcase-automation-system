@@ -1,5 +1,6 @@
 package com.testcase.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import java.util.UUID;
 
@@ -12,7 +13,7 @@ public class Actor {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-
+    @JsonBackReference("diagram-actors")
     // FK về UseCaseDiagram — dùng @ManyToOne thay vì lưu UUID thô
     // để JPA tự join được, lazy load tránh N+1
     @ManyToOne(fetch = FetchType.LAZY)

@@ -1,5 +1,7 @@
 package com.testcase.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -41,11 +43,15 @@ public class UseCaseDiagram {
     // Quan hệ 1:N với Actor, UseCase, Relationship
     // cascade = ALL: khi xóa diagram thì xóa luôn con
     // orphanRemoval = true: khi remove khỏi list thì xóa DB
+    @JsonManagedReference("diagram-actors")
+
     @OneToMany(mappedBy = "diagram", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Actor> actors = new ArrayList<>();
+    @JsonManagedReference("diagram-usecases")
 
     @OneToMany(mappedBy = "diagram", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<UseCase> useCases = new ArrayList<>();
+    @JsonManagedReference("diagram-relationships")
 
     @OneToMany(mappedBy = "diagram", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Relationship> relationships = new ArrayList<>();

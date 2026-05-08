@@ -1,6 +1,8 @@
 package com.testcase.backend.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +18,7 @@ public class TestCase {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+    @JsonBackReference("usecase-testcases")
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "use_case_id", nullable = false)
@@ -49,7 +52,7 @@ public class TestCase {
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
-
+    @JsonIgnore
     // Quan hệ 1:N với TestResult
     @OneToMany(mappedBy = "testCase", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TestResult> testResults = new ArrayList<>();

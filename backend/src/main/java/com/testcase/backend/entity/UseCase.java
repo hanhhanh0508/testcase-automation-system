@@ -1,5 +1,7 @@
 package com.testcase.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +17,7 @@ public class UseCase {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+    @JsonBackReference("diagram-usecases")
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "diagram_id", nullable = false)
@@ -47,6 +50,7 @@ public class UseCase {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UseCaseStatus status = UseCaseStatus.PENDING;
+    @JsonManagedReference("usecase-testcases")
 
     // Quan hệ 1:N với TestCase
     @OneToMany(mappedBy = "useCase", cascade = CascadeType.ALL, orphanRemoval = true)

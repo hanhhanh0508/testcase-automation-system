@@ -1,0 +1,7 @@
+{
+  "actors": [{"xmiId": "A1", "name": "User", "actorType": "PRIMARY"}],
+  "useCases": [
+    {"xmiId": "UC1", "name": "Login", "preconditions": ["Đã có tài khoản"], "postconditions": ["Token được cấp"], "priority": "HIGH"}
+  ],
+  "relationships": [{"sourceXmiId": "A1", "targetXmiId": "UC1", "type": "ASSOCIATION"}]
+}

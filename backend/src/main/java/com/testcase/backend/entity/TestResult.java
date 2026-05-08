@@ -1,5 +1,7 @@
 package com.testcase.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -13,6 +15,7 @@ public class TestResult {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+    @JsonIgnore
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "test_case_id", nullable = false)

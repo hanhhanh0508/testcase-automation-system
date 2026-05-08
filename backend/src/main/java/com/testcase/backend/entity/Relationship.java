@@ -1,5 +1,7 @@
 package com.testcase.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+
 import jakarta.persistence.*;
 import java.util.UUID;
 
@@ -12,6 +14,7 @@ public class Relationship {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+    @JsonBackReference("diagram-relationships")
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "diagram_id", nullable = false)
