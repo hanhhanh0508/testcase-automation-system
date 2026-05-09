@@ -42,6 +42,12 @@ public class ApiExecutorService {
     @Value("${app.test.target.baseUrl:http://localhost:8080}")
     private String baseUrl;
 
+    @Value("${app.test.username:testuser}")
+    private String testUsername;
+
+    @Value("${app.test.password:Password@123}")
+    private String testPassword;
+
     public ApiExecutorService(TestCaseRepository testCaseRepository,
             TestResultRepository testResultRepository) {
         this.testCaseRepository = testCaseRepository;
@@ -73,6 +79,9 @@ public class ApiExecutorService {
             log.append("║  ENGINE  : RestTemplate HTTP Client (Library-based)\n");
             log.append("║  TARGET  : ").append(baseUrl).append("\n");
             log.append("╚══════════════════════════════════════════════════════════╝\n\n");
+            // ← THÊM 2 DÒNG NÀY VÀO ĐÂY
+            log.append("  🔐  Đang tự động đăng nhập để lấy JWT token...\n");
+            autoLogin(ctx, log);
 
             for (int i = 0; i < steps.size(); i++) {
                 String step = steps.get(i).trim();
@@ -229,9 +238,11 @@ public class ApiExecutorService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.ALL));
+
         ctx.headers.forEach((key, values) -> {
             for (String value : values) {
-                headers.addIfAbsent(key, value);
+                String resolved = resolvePlaceholders(value, ctx.variables); // ← thêm dòng này
+                headers.addIfAbsent(key, resolved); // ← dùng resolved
             }
         });
 
@@ -377,8 +388,11 @@ public class ApiExecutorService {
         String h = step.substring(7).trim();
         String[] hParts = h.split(":", 2);
         if (hParts.length == 2) {
-            ctx.headers.set(hParts[0].trim(), hParts[1].trim());
-            log.append("  ➤  HEADER ").append(hParts[0].trim()).append(" set\n");
+            String key = hParts[0].trim();
+            // Resolve {token} và các biến khác ngay tại đây
+            String value = resolvePlaceholders(hParts[1].trim(), ctx.variables);
+            ctx.headers.set(key, value);
+            log.append("  ➤  HEADER ").append(key).append(" set\n");
         }
     }
 
@@ -429,6 +443,41 @@ public class ApiExecutorService {
         return testResultRepository.save(r);
     }
 
+    /**
+     * Tự động đăng nhập để lấy JWT token thật,
+     * lưu vào ctx.variables["token"] để dùng cho các bước tiếp theo.
+     */
+    private void autoLogin(ExecutionContext ctx, StringBuilder log) {
+        try {
+            HttpHeaders h = new HttpHeaders();
+            h.setContentType(MediaType.APPLICATION_JSON);
+
+            String body = String.format(
+                    "{\"username\":\"%s\",\"password\":\"%s\"}",
+                    testUsername, testPassword);
+
+            ResponseEntity<String> res = restTemplate.exchange(
+                    baseUrl + "/api/auth/login",
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, h),
+                    String.class);
+
+            if (res.getStatusCode().is2xxSuccessful() && res.getBody() != null) {
+                JsonNode tokenNode = objectMapper.readTree(res.getBody())
+                        .path("data")
+                        .path("token");
+                if (!tokenNode.isMissingNode() && !tokenNode.isNull()) {
+                    ctx.variables.put("token", tokenNode.asText());
+                    log.append("  ✅  Auto-login thành công — token đã được lưu.\n");
+                    return;
+                }
+            }
+            log.append("  ⚠️  Auto-login thất bại: không tìm thấy token trong response.\n");
+
+        } catch (Exception e) {
+            log.append("  ⚠️  Auto-login lỗi: ").append(e.getMessage()).append("\n");
+        }
+    }
     // ─────────────────────────────────────────────────────────────────────────
     // INNER CLASS: ngữ cảnh thực thi
     // ─────────────────────────────────────────────────────────────────────────
