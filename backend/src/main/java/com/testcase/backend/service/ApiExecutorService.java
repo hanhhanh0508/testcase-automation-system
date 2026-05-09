@@ -245,6 +245,11 @@ public class ApiExecutorService {
                 headers.addIfAbsent(key, resolved); // ← dùng resolved
             }
         });
+        // ← THÊM ĐOẠN NÀY: tự động inject token nếu chưa có Authorization header
+        if (headers.getFirst("Authorization") == null && ctx.variables.containsKey("token")) {
+            headers.set("Authorization", "Bearer " + ctx.variables.get("token"));
+            log.append("  ℹ️  Auto-inject Authorization header từ token đã lưu.\n");
+        }
 
         // Bỏ qua Authorization header có placeholder chưa resolve (vd: "Bearer
         // {token}")
@@ -253,6 +258,8 @@ public class ApiExecutorService {
             headers.remove("Authorization");
             log.append("  ℹ️  Authorization header chứa placeholder — bỏ qua (chưa đăng nhập)\n");
         }
+        // Bỏ qua Authorization header có placeholder chưa resolve (vd: "Bearer
+        // {token}")
 
         HttpEntity<String> entity = new HttpEntity<>(
                 (body != null && !body.isEmpty()) ? body : null, headers);
