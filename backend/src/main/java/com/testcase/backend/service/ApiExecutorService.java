@@ -14,26 +14,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Engine thực thi Test Case sử dụng RestTemplate (Spring HTTP Client Library).
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * KHÔNG dùng Selenium — đây là thư viện lập trình thuần túy (library-based).
- * RestTemplate là thư viện HTTP client tích hợp sẵn trong Spring Framework.
- * ─────────────────────────────────────────────────────────────────────────────
- *
- * Cú pháp step được nhận dạng:
- * HTTP {METHOD} {path} → gọi API (GET/POST/PUT/DELETE/PATCH)
- * SET_BODY {json} → thiết lập request body
- * HEADER {name}: {value} → thêm custom header
- * INPUT {key} = {value} → lưu biến vào context
- * EXPECT_STATUS {code} → kiểm tra HTTP status code
- * EXPECT_BODY_CONTAINS {text} → kiểm tra body chứa text
- * EXPECT_BODY_FIELD {field.path} → kiểm tra field tồn tại trong JSON
- * === ... === / --- ... --- → section header (bỏ qua, chỉ log)
+ * Fix: escape các URI template placeholder chưa được resolve ({resource},
+ * {id}, {token}...) trước khi truyền vào RestTemplate để tránh lỗi
+ * "Not enough variable values available to expand '...'"
  */
 @Service
 public class ApiExecutorService {
@@ -42,6 +35,9 @@ public class ApiExecutorService {
     private final TestResultRepository testResultRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+
+    // Pattern nhận diện các placeholder dạng {name} trong URL
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{([^}]+)\\}");
 
     @Value("${app.test.target.baseUrl:http://localhost:8080}")
     private String baseUrl;
@@ -83,7 +79,6 @@ public class ApiExecutorService {
                 if (step.isEmpty())
                     continue;
 
-                // Section headers
                 if (step.startsWith("===") || step.startsWith("---")) {
                     log.append("\n").append(step).append("\n");
                     continue;
@@ -93,7 +88,6 @@ public class ApiExecutorService {
                 processStep(step, ctx, log);
             }
 
-            // Kiểm tra expected result nếu có
             String expected = tc.getExpectedResult();
             if (expected != null && !expected.isBlank() && ctx.lastResponseBody != null) {
                 String keyword = extractKeyword(expected);
@@ -200,16 +194,37 @@ public class ApiExecutorService {
 
         String method = tokens[1].toUpperCase();
         String rawPath = tokens[2];
+
+        // Validate method — từ chối nếu vẫn còn placeholder
+        if (rawPath.toUpperCase().equals("{METHOD}") || method.startsWith("{")) {
+            log.append("  ⚠️  HTTP method chưa được resolve: ").append(method)
+                    .append(" — bỏ qua step này\n");
+            return;
+        }
+
+        // Validate method hợp lệ
+        Set<String> validMethods = Set.of("GET", "POST", "PUT", "DELETE", "PATCH");
+        if (!validMethods.contains(method)) {
+            log.append("  ⚠️  HTTP method không hợp lệ: ").append(method)
+                    .append(" — bỏ qua step này\n");
+            return;
+        }
+
+        // Resolve variables từ context (ví dụ {token} → giá trị thật)
         String path = resolvePlaceholders(rawPath, ctx.variables);
 
-        // Body: từ SET_BODY hoặc inline "body: {json}"
+        // Body: từ SET_BODY hoặc inline "body:"
         String body = ctx.pendingBody;
         if (step.toLowerCase().contains("body:")) {
             int idx = step.toLowerCase().indexOf("body:");
             body = step.substring(idx + 5).trim();
         }
 
-        String url = baseUrl + (path.startsWith("/") ? path : "/" + path);
+        // ── KEY FIX: escape các placeholder chưa resolve trong URL ──────────
+        // Ví dụ: /api/borrows/{id}/return → /api/borrows/%7Bid%7D/return
+        // Điều này ngăn RestTemplate cố gắng expand chúng như URI variables
+        String safePath = escapePlaceholders(path);
+        String url = baseUrl + (safePath.startsWith("/") ? safePath : "/" + safePath);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -219,6 +234,14 @@ public class ApiExecutorService {
                 headers.addIfAbsent(key, value);
             }
         });
+
+        // Bỏ qua Authorization header có placeholder chưa resolve (vd: "Bearer
+        // {token}")
+        String authHeader = headers.getFirst("Authorization");
+        if (authHeader != null && authHeader.contains("{") && authHeader.contains("}")) {
+            headers.remove("Authorization");
+            log.append("  ℹ️  Authorization header chứa placeholder — bỏ qua (chưa đăng nhập)\n");
+        }
 
         HttpEntity<String> entity = new HttpEntity<>(
                 (body != null && !body.isEmpty()) ? body : null, headers);
@@ -247,6 +270,33 @@ public class ApiExecutorService {
         log.append("  ◀  status: ").append(ctx.lastStatusCode).append("\n");
         log.append("  ◀  body  : ").append(truncate(ctx.lastResponseBody, 300)).append("\n");
         ctx.pendingBody = null;
+    }
+
+    /**
+     * Escape các {placeholder} chưa resolve trong URL path.
+     * Thay { → %7B và } → %7D để RestTemplate không cố expand chúng.
+     * Các biến đã được resolve (ví dụ token thật, ID thật) sẽ không có dấu ngoặc
+     * nên an toàn.
+     */
+    private String escapePlaceholders(String path) {
+        // Chỉ escape nếu path còn chứa {name} pattern chưa resolve
+        Matcher m = PLACEHOLDER_PATTERN.matcher(path);
+        if (!m.find())
+            return path; // không có placeholder → giữ nguyên
+
+        // Reset matcher
+        m.reset();
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String placeholder = m.group(0); // toàn bộ {name}
+            // Nếu đây là UUID pattern (all hex + dashes, no letters like "id", "token") →
+            // giữ nguyên
+            // Nhưng nếu là placeholder text → escape
+            m.appendReplacement(sb, Matcher.quoteReplacement(
+                    placeholder.replace("{", "%7B").replace("}", "%7D")));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     private void handleExpectStatus(String step, ExecutionContext ctx, StringBuilder log) {
@@ -341,6 +391,10 @@ public class ApiExecutorService {
     // HELPERS
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Resolve các biến đã lưu trong context (ví dụ {token} → giá trị thật).
+     * Chỉ replace những key đã có trong variables map.
+     */
     private String resolvePlaceholders(String path, Map<String, String> vars) {
         String resolved = path;
         for (Map.Entry<String, String> e : vars.entrySet()) {

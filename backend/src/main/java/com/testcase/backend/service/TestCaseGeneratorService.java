@@ -12,23 +12,6 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-/**
- * Engine sinh Test Case từ Use Case Diagram.
- *
- * Thuật toán cốt lõi:
- * 1. Đọc UseCases + Relationships từ DB.
- * 2. Xây dựng đồ thị quan hệ (include / extend / association / generalization).
- * 3. Với mỗi Use Case:
- * - Happy Path : chèn thêm bước của các UC được «include» (tự động mở rộng).
- * - Negative : sinh kịch bản lỗi với dữ liệu không hợp lệ / thiếu auth.
- * - Boundary : sinh kịch bản giá trị biên min / max.
- * 4. Với quan hệ «extend» → sinh thêm kịch bản extension riêng.
- * 5. Với quan hệ «generalization» (UC con kế thừa UC cha) → sinh kịch bản kế
- * thừa.
- * 6. Lưu TestCase, cập nhật trạng thái UseCase & Diagram.
- *
- * Sử dụng RestTemplate (Spring HTTP Client) để thực thi — không dùng Selenium.
- */
 @Service
 public class TestCaseGeneratorService {
 
@@ -63,16 +46,13 @@ public class TestCaseGeneratorService {
                     "Diagram chưa có use case nào. Hãy nhập dữ liệu use case trước.");
         }
 
-        // ── Bảng tra xmiId → UseCase ──────────────────────────────────────
         Map<String, UseCase> ucByXmiId = useCases.stream()
                 .collect(Collectors.toMap(UseCase::getXmiId, uc -> uc, (a, b) -> a));
 
-        // ── Phân loại quan hệ theo type ───────────────────────────────────
         Map<String, List<String>> includeMap = buildRelationMap(relationships, RelationType.INCLUDE);
         Map<String, List<String>> extendMap = buildRelationMap(relationships, RelationType.EXTEND);
         Map<String, List<String>> generalizationMap = buildRelationMap(relationships, RelationType.GENERALIZATION);
 
-        // ── Counter toàn cục cho mã TC-001, TC-002, ... ──────────────────
         long existingCount = testCaseRepository.count();
         AtomicInteger counter = new AtomicInteger((int) existingCount + 1);
 
@@ -82,24 +62,15 @@ public class TestCaseGeneratorService {
             if (uc.getStatus() == UseCaseStatus.GENERATED)
                 continue;
 
-            // Các UC bắt buộc phải đi kèm (include)
             List<UseCase> includedUCs = resolveUCs(
                     includeMap.getOrDefault(uc.getXmiId(), List.of()), ucByXmiId);
-
-            // Các UC cha được kế thừa (generalization)
             List<UseCase> parentUCs = resolveUCs(
                     generalizationMap.getOrDefault(uc.getXmiId(), List.of()), ucByXmiId);
 
-            // 1. Happy Path (bao gồm include steps)
             generated.add(buildHappyPath(uc, includedUCs, parentUCs, counter));
-
-            // 2. Negative Case
             generated.add(buildNegative(uc, counter));
-
-            // 3. Boundary Case
             generated.add(buildBoundary(uc, counter));
 
-            // 4. Extension Cases — mỗi «extend» → 1 TC riêng
             for (String extXmiId : extendMap.getOrDefault(uc.getXmiId(), List.of())) {
                 UseCase extUC = ucByXmiId.get(extXmiId);
                 if (extUC != null) {
@@ -124,14 +95,145 @@ public class TestCaseGeneratorService {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // BUILDERS — tạo từng loại TestCase
+    // RESOLVE HTTP METHOD & ENDPOINT from use case name
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * Happy Path: luồng thành công chính.
-     * Tự động chèn thêm các bước của UC được «include» (UML Include).
-     * Nếu UC kế thừa từ UC cha (UML Generalization), đưa thêm ghi chú.
+     * Suy ra HTTP method phù hợp từ tên use case.
      */
+    private String resolveHttpMethod(UseCase uc) {
+        String name = uc.getName().toLowerCase();
+        if (name.contains("create") || name.contains("tạo") || name.contains("thêm")
+                || name.contains("add") || name.contains("register") || name.contains("đăng ký")
+                || name.contains("signup") || name.contains("login") || name.contains("đăng nhập")
+                || name.contains("signin") || name.contains("logout") || name.contains("đăng xuất")
+                || name.contains("upload") || name.contains("tải lên") || name.contains("borrow")
+                || name.contains("mượn") || name.contains("return") || name.contains("trả")
+                || name.contains("send") || name.contains("gửi") || name.contains("checkout")
+                || name.contains("payment") || name.contains("thanh toán")) {
+            return "POST";
+        }
+        if (name.contains("update") || name.contains("edit") || name.contains("sửa")
+                || name.contains("cập nhật") || name.contains("manage")) {
+            return "PUT";
+        }
+        if (name.contains("delete") || name.contains("xóa") || name.contains("remove")) {
+            return "DELETE";
+        }
+        // default: GET
+        return "GET";
+    }
+
+    /**
+     * Suy ra endpoint REST phù hợp từ tên use case.
+     */
+    private String resolveEndpoint(UseCase uc) {
+        String name = uc.getName().toLowerCase();
+
+        // Auth endpoints
+        if (name.contains("login") || name.contains("đăng nhập") || name.contains("signin"))
+            return "/api/auth/login";
+        if (name.contains("register") || name.contains("đăng ký") || name.contains("signup"))
+            return "/api/auth/register";
+        if (name.contains("logout") || name.contains("đăng xuất"))
+            return "/api/auth/logout";
+
+        // Resource-based endpoints: derive resource name from use case name
+        String resource = deriveResourceName(uc.getName());
+
+        if (name.contains("view") || name.contains("xem") || name.contains("list")
+                || name.contains("danh sách") || name.contains("search") || name.contains("tìm")
+                || name.contains("get") || name.contains("history") || name.contains("lịch sử")
+                || name.contains("order") || name.contains("đơn hàng")) {
+            return "/api/" + resource;
+        }
+        if (name.contains("create") || name.contains("tạo") || name.contains("thêm")
+                || name.contains("add") || name.contains("upload") || name.contains("tải lên")) {
+            return "/api/" + resource;
+        }
+        if (name.contains("update") || name.contains("edit") || name.contains("sửa")
+                || name.contains("cập nhật") || name.contains("manage")) {
+            return "/api/" + resource + "/{id}";
+        }
+        if (name.contains("delete") || name.contains("xóa") || name.contains("remove")) {
+            return "/api/" + resource + "/{id}";
+        }
+        if (name.contains("borrow") || name.contains("mượn")) {
+            return "/api/borrows";
+        }
+        if (name.contains("return") || name.contains("trả")) {
+            return "/api/borrows/{id}/return";
+        }
+        if (name.contains("send") || name.contains("gửi") || name.contains("notification")
+                || name.contains("thông báo")) {
+            return "/api/notifications";
+        }
+        if (name.contains("checkout")) {
+            return "/api/orders/checkout";
+        }
+        if (name.contains("payment") || name.contains("thanh toán")) {
+            return "/api/payments";
+        }
+        if (name.contains("cart") || name.contains("giỏ hàng")) {
+            return "/api/cart";
+        }
+
+        return "/api/" + resource;
+    }
+
+    /**
+     * Tách tên resource từ tên use case (bỏ động từ, giữ danh từ, chuyển thành
+     * kebab-case).
+     */
+    private String deriveResourceName(String ucName) {
+        String name = ucName.toLowerCase()
+                // Bỏ các động từ thường gặp
+                .replaceAll(
+                        "\\b(manage|view|create|add|update|edit|delete|remove|search|filter|get|list|send|upload|download|export|import)\\s*",
+                        "")
+                .replaceAll("\\b(tạo|thêm|xem|sửa|xóa|tìm|lọc|tải|xuất|gửi|quản lý|cập nhật)\\s*", "")
+                .trim()
+                .replaceAll("\\s+", "-")
+                .replaceAll("[^a-z0-9\\-]", "");
+
+        if (name.isEmpty() || name.equals("-")) {
+            // Fallback: dùng 2 từ đầu của tên gốc
+            String[] parts = ucName.toLowerCase().split("\\s+");
+            if (parts.length >= 2)
+                name = parts[1];
+            else
+                name = parts[0];
+            name = name.replaceAll("[^a-z0-9]", "");
+        }
+
+        // Xử lý một số trường hợp đặc biệt
+        if (name.contains("book"))
+            return "books";
+        if (name.contains("product") || name.contains("sản-phẩm"))
+            return "products";
+        if (name.contains("order") || name.contains("đơn"))
+            return "orders";
+        if (name.contains("user") || name.contains("account") || name.contains("tài-khoản"))
+            return "users";
+        if (name.contains("diagram"))
+            return "diagrams";
+        if (name.contains("testcase") || name.contains("test-case"))
+            return "testcases";
+        if (name.contains("borrow") || name.contains("mượn"))
+            return "borrows";
+
+        // Đảm bảo số nhiều
+        if (!name.isEmpty() && !name.endsWith("s") && !name.endsWith("-")) {
+            name = name + "s";
+        }
+
+        return name.isEmpty() ? "resources" : name;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // BUILDERS
+    // ═════════════════════════════════════════════════════════════════════════
+
     private TestCase buildHappyPath(UseCase uc,
             List<UseCase> includedUCs,
             List<UseCase> parentUCs,
@@ -145,7 +247,6 @@ public class TestCaseGeneratorService {
 
         List<String> steps = new ArrayList<>();
 
-        // ── PHẦN 1: Chuẩn bị ──────────────────────────────────────────────
         steps.add("=== [CHUẨN BỊ] ===");
         steps.add("Xác nhận môi trường test đang hoạt động tại base URL.");
 
@@ -153,7 +254,6 @@ public class TestCaseGeneratorService {
             steps.add("Kiểm tra điều kiện tiên quyết: " + String.join(" | ", uc.getPreconditions()));
         }
 
-        // Nếu có kế thừa (generalization), ghi chú hành vi cha
         if (!parentUCs.isEmpty()) {
             for (UseCase parent : parentUCs) {
                 steps.add("[GENERALIZATION] UC này kế thừa từ «" + parent.getName()
@@ -163,11 +263,9 @@ public class TestCaseGeneratorService {
 
         steps.add("Chuẩn bị dữ liệu đầu vào HỢP LỆ cho: " + uc.getName());
 
-        // ── PHẦN 2: Các bước HTTP chính ──────────────────────────────────
         steps.add("=== [THỰC HIỆN - " + uc.getName().toUpperCase() + "] ===");
         steps.addAll(buildApiSteps(uc, "valid"));
 
-        // ── PHẦN 3: Chèn bước từ các UC được INCLUDE ────────────────────
         for (UseCase inc : includedUCs) {
             steps.add("--- [INCLUDE] «" + inc.getName() + "» (bắt buộc thực hiện) ---");
             steps.add("Bước include này luôn được gọi khi thực thi «" + uc.getName() + "».");
@@ -175,11 +273,10 @@ public class TestCaseGeneratorService {
             steps.add("Xác nhận «" + inc.getName() + "» hoàn thành thành công.");
         }
 
-        // ── PHẦN 4: Xác nhận kết quả ─────────────────────────────────────
         steps.add("=== [XÁC NHẬN KẾT QUẢ] ===");
         steps.add("EXPECT_STATUS 200 hoặc 201");
-        steps.add("EXPECT_BODY_FIELD data (response phải có trường data)");
-        steps.add("EXPECT_BODY_CONTAINS success (hoặc từ khóa thành công phù hợp)");
+        steps.add("EXPECT_BODY_FIELD data");
+        steps.add("EXPECT_BODY_CONTAINS success");
 
         if (!uc.getPostconditions().isEmpty()) {
             steps.add("Kiểm tra post-condition: " + String.join(" | ", uc.getPostconditions()));
@@ -189,10 +286,6 @@ public class TestCaseGeneratorService {
         return tc;
     }
 
-    /**
-     * Negative Case: dữ liệu sai, thiếu, không xác thực.
-     * Đảm bảo hệ thống trả về lỗi rõ ràng và KHÔNG thực hiện hành động.
-     */
     private TestCase buildNegative(UseCase uc, AtomicInteger counter) {
         String expectedResult = "Hệ thống trả về HTTP 400/401/403/422. "
                 + "Response body chứa thông báo lỗi rõ ràng. "
@@ -205,7 +298,7 @@ public class TestCaseGeneratorService {
 
         steps.add("=== [CHUẨN BỊ DỮ LIỆU LỖI] ===");
         steps.add("Chuẩn bị các tập dữ liệu KHÔNG hợp lệ cho: " + uc.getName());
-        steps.add("Liệt kê các trường bắt buộc và loại lỗi cần kiểm tra:");
+        steps.add("Các trường hợp kiểm tra:");
         steps.add("  • Dữ liệu rỗng/null cho các trường bắt buộc");
         steps.add("  • Định dạng sai (email sai format, số âm, ngày không hợp lệ)");
         steps.add("  • Dữ liệu vượt giới hạn (chuỗi quá dài, số quá lớn)");
@@ -215,22 +308,17 @@ public class TestCaseGeneratorService {
         steps.addAll(buildApiSteps(uc, "invalid"));
 
         steps.add("=== [KIỂM THỬ THIẾU XÁC THỰC] ===");
-        steps.add("Gửi request KHÔNG có Authorization header.");
         steps.addAll(buildApiSteps(uc, "no_auth"));
 
         steps.add("=== [XÁC NHẬN LỖI] ===");
         steps.add("EXPECT_STATUS 400 hoặc 401 hoặc 403 hoặc 422");
-        steps.add("EXPECT_BODY_FIELD message (thông báo lỗi phải tồn tại)");
+        steps.add("EXPECT_BODY_FIELD message");
         steps.add("Xác nhận dữ liệu trong DB KHÔNG bị thay đổi sai.");
-        steps.add("Xác nhận hệ thống KHÔNG thực hiện hành động không mong muốn.");
 
         tc.setSteps(steps);
         return tc;
     }
 
-    /**
-     * Boundary Case: kiểm tra tại biên giới min/max của từng trường.
-     */
     private TestCase buildBoundary(UseCase uc, AtomicInteger counter) {
         String expectedResult = "Hệ thống xử lý đúng tại biên giới min/max. "
                 + "Giá trị hợp lệ tại biên → 200. "
@@ -239,6 +327,9 @@ public class TestCaseGeneratorService {
         TestCase tc = newTc(uc, counter, TestType.BOUNDARY,
                 uc.getName() + " — Giá trị biên", expectedResult);
 
+        String method = resolveHttpMethod(uc);
+        String endpoint = resolveEndpoint(uc);
+
         List<String> steps = new ArrayList<>();
 
         steps.add("=== [XÁC ĐỊNH GIÁ TRỊ BIÊN] ===");
@@ -246,36 +337,35 @@ public class TestCaseGeneratorService {
         steps.add("Ví dụ: username (3-50 ký tự), password (6-128 ký tự), age (0-150), price (0-999999)");
 
         steps.add("=== [TEST MIN BOUNDARY — Giá trị tối thiểu] ===");
-        steps.addAll(buildBoundaryApiSteps(uc, "min"));
+        steps.add("INPUT: thiết lập mỗi trường = giá trị TỐI THIỂU hợp lệ cho «" + uc.getName() + "».");
+        steps.add("Ví dụ: string = 1 ký tự, number = 0, date = ngày hôm nay.");
+        steps.add("HEADER Authorization: Bearer {token}");
+        steps.add("HTTP " + method + " " + endpoint + " body: {min value data}");
         steps.add("EXPECT_STATUS 200 — hệ thống phải chấp nhận giá trị tại min.");
 
         steps.add("=== [TEST MAX BOUNDARY — Giá trị tối đa] ===");
-        steps.addAll(buildBoundaryApiSteps(uc, "max"));
+        steps.add("INPUT: thiết lập mỗi trường = giá trị TỐI ĐA hợp lệ cho «" + uc.getName() + "».");
+        steps.add("Ví dụ: string = MAX_LENGTH ký tự, number = MAX_INT, date = ngày xa nhất.");
+        steps.add("HEADER Authorization: Bearer {token}");
+        steps.add("HTTP " + method + " " + endpoint + " body: {max value data}");
         steps.add("EXPECT_STATUS 200 — hệ thống phải chấp nhận giá trị tại max.");
 
         steps.add("=== [TEST DƯỚI MIN — Phải bị từ chối] ===");
-        steps.add("INPUT: string field = \"\" (rỗng), number field = (min - 1) hoặc giá trị âm.");
-        steps.add("HTTP {METHOD} /api/{endpoint} body: {below-min data}");
+        steps.add("INPUT: string field = \"\" (rỗng), number field = -1 (dưới giá trị min).");
+        steps.add("HTTP " + method + " " + endpoint);
         steps.add("EXPECT_STATUS 400 hoặc 422 — hệ thống PHẢI từ chối giá trị dưới min.");
 
         steps.add("=== [TEST TRÊN MAX — Phải bị từ chối] ===");
-        steps.add("INPUT: string field = chuỗi " + uc.getName().length() * 20 + "+ ký tự, number = MAX_LONG.");
-        steps.add("HTTP {METHOD} /api/{endpoint} body: {above-max data}");
+        steps.add("INPUT: string field = chuỗi 1000+ ký tự, number = 9999999999.");
+        steps.add("HTTP " + method + " " + endpoint);
         steps.add("EXPECT_STATUS 400 hoặc 422 — hệ thống PHẢI từ chối giá trị trên max.");
 
         tc.setSteps(steps);
         return tc;
     }
 
-    /**
-     * Extension Case: kịch bản khi điều kiện «extend» được thỏa mãn.
-     * Đây là trường hợp rẽ nhánh từ Use Case gốc.
-     */
-    private TestCase buildExtensionCase(UseCase baseUC,
-            UseCase extUC,
-            AtomicInteger counter) {
-        String expectedResult = "Luồng mở rộng «" + extUC.getName() + "» được kích hoạt và thực thi thành công. "
-                + "Kết quả cuối cùng nhất quán với cả base UC và extension UC.";
+    private TestCase buildExtensionCase(UseCase baseUC, UseCase extUC, AtomicInteger counter) {
+        String expectedResult = "Luồng mở rộng «" + extUC.getName() + "» được kích hoạt và thực thi thành công.";
 
         TestCase tc = newTc(baseUC, counter, TestType.HAPPY_PATH,
                 baseUC.getName() + " + [EXTEND] «" + extUC.getName() + "»", expectedResult);
@@ -289,7 +379,6 @@ public class TestCaseGeneratorService {
 
         steps.add("=== [BƯỚC 1: Chuẩn bị điều kiện kích hoạt Extension] ===");
         steps.add("Thiết lập trạng thái/dữ liệu để điều kiện của «" + extUC.getName() + "» được thỏa mãn.");
-        steps.add("Ví dụ: user chọn tuỳ chọn nâng cao, trạng thái tài khoản đặc biệt, v.v.");
 
         steps.add("=== [BƯỚC 2: Thực thi Base UC] ===");
         steps.addAll(buildApiSteps(baseUC, "valid"));
@@ -301,23 +390,15 @@ public class TestCaseGeneratorService {
         steps.add("=== [BƯỚC 4: Xác nhận kết quả tổng hợp] ===");
         steps.add("EXPECT_STATUS 200");
         steps.add("Kiểm tra luồng extension «" + extUC.getName() + "» đã được thực thi.");
-        steps.add("Kiểm tra kết quả cuối cùng nhất quán với base và extension.");
 
         tc.setSteps(steps);
         return tc;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // SINH BƯỚC HTTP — Library-based (RestTemplate), không dùng Selenium
+    // SINH BƯỚC HTTP
     // ═════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Sinh danh sách step dựa trên tên Use Case và dataMode.
-     * Engine nhận dạng pattern phổ biến: login, register, logout,
-     * create, update, delete, view/list, search, upload, export.
-     *
-     * @param dataMode "valid" | "invalid" | "no_auth" | "min" | "max"
-     */
     private List<String> buildApiSteps(UseCase uc, String dataMode) {
         String name = uc.getName().toLowerCase();
 
@@ -332,20 +413,25 @@ public class TestCaseGeneratorService {
         if (name.contains("export") || name.contains("xuất") || name.contains("download"))
             return buildExportSteps(uc.getName(), dataMode);
         if (name.contains("search") || name.contains("tìm") || name.contains("filter"))
-            return buildSearchSteps(uc.getName(), dataMode);
+            return buildSearchSteps(uc, dataMode);
         if (name.contains("delete") || name.contains("xóa") || name.contains("remove"))
-            return buildDeleteSteps(uc.getName(), dataMode);
+            return buildDeleteSteps(uc, dataMode);
         if (name.contains("update") || name.contains("edit") || name.contains("sửa")
                 || name.contains("cập nhật"))
-            return buildUpdateSteps(uc.getName(), dataMode);
-        if (name.contains("create") || name.contains("tạo") || name.contains("thêm") || name.contains("add"))
-            return buildCreateSteps(uc.getName(), dataMode);
+            return buildUpdateSteps(uc, dataMode);
+        if (name.contains("create") || name.contains("tạo") || name.contains("thêm")
+                || name.contains("add") || name.contains("borrow") || name.contains("mượn")
+                || name.contains("checkout") || name.contains("payment") || name.contains("thanh toán")
+                || name.contains("send") || name.contains("gửi"))
+            return buildCreateSteps(uc, dataMode);
         if (name.contains("view") || name.contains("xem") || name.contains("list")
-                || name.contains("danh sách") || name.contains("get"))
-            return buildViewSteps(uc.getName(), dataMode);
+                || name.contains("danh sách") || name.contains("get") || name.contains("manage")
+                || name.contains("quản lý") || name.contains("history") || name.contains("lịch sử"))
+            return buildViewSteps(uc, dataMode);
+        if (name.contains("return") || name.contains("trả"))
+            return buildReturnSteps(uc, dataMode);
 
-        // Generic fallback
-        return buildGenericSteps(uc.getName(), dataMode);
+        return buildGenericSteps(uc, dataMode);
     }
 
     // ── Login ──────────────────────────────────────────────────────────────
@@ -383,10 +469,10 @@ public class TestCaseGeneratorService {
         List<String> s = new ArrayList<>();
         switch (dataMode) {
             case "valid" -> {
-                s.add("INPUT username = \"newuser_\" + System.currentTimeMillis() (đảm bảo unique)");
+                s.add("INPUT username = \"newuser_test\" (đảm bảo unique)");
                 s.add("INPUT email    = \"newuser@example.com\"");
                 s.add("INPUT password = \"StrongPass@123\"");
-                s.add("SET_BODY {\"username\":\"newuser_ts\",\"email\":\"newuser@example.com\",\"password\":\"StrongPass@123\"}");
+                s.add("SET_BODY {\"username\":\"newuser_test\",\"email\":\"newuser@example.com\",\"password\":\"StrongPass@123\"}");
                 s.add("HTTP POST /api/auth/register");
                 s.add("EXPECT_STATUS 200");
                 s.add("EXPECT_BODY_FIELD data.token");
@@ -401,7 +487,9 @@ public class TestCaseGeneratorService {
                 s.add("EXPECT_BODY_FIELD message");
             }
             case "no_auth" -> {
-                s.add("Register không yêu cầu auth — bỏ qua bước này.");
+                s.add("Register không yêu cầu auth — kiểm tra endpoint không bị chặn.");
+                s.add("HTTP GET /api/auth/register");
+                s.add("EXPECT_STATUS 405 hoặc 404 (chỉ POST được phép)");
             }
         }
         return s;
@@ -413,13 +501,13 @@ public class TestCaseGeneratorService {
         switch (dataMode) {
             case "valid" -> {
                 s.add("Lấy JWT token hợp lệ từ bước đăng nhập trước đó.");
-                s.add("HEADER Authorization: Bearer {token}");
+                s.add("HEADER Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.valid_token");
                 s.add("HTTP POST /api/auth/logout");
                 s.add("EXPECT_STATUS 200");
                 s.add("Xóa token khỏi client storage.");
             }
             case "invalid" -> {
-                s.add("HEADER Authorization: Bearer invalid_token_xyz");
+                s.add("HEADER Authorization: Bearer invalid_token_xyz_123");
                 s.add("HTTP POST /api/auth/logout");
                 s.add("EXPECT_STATUS 401");
             }
@@ -431,59 +519,63 @@ public class TestCaseGeneratorService {
         return s;
     }
 
-    // ── Create ─────────────────────────────────────────────────────────────
-    private List<String> buildCreateSteps(String ucName, String dataMode) {
+    // ── Create / POST ─────────────────────────────────────────────────────
+    private List<String> buildCreateSteps(UseCase uc, String dataMode) {
+        String endpoint = resolveEndpoint(uc);
         List<String> s = new ArrayList<>();
         switch (dataMode) {
             case "valid" -> {
                 s.add("Lấy JWT token hợp lệ (đã đăng nhập).");
-                s.add("INPUT: chuẩn bị dữ liệu HỢP LỆ đầy đủ các trường bắt buộc cho «" + ucName + "».");
+                s.add("INPUT: chuẩn bị dữ liệu HỢP LỆ đầy đủ các trường bắt buộc cho «" + uc.getName() + "».");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("SET_BODY {dữ liệu hợp lệ theo đặc tả}");
-                s.add("HTTP POST /api/{resource}");
+                s.add("SET_BODY {\"name\":\"test_value\",\"description\":\"test description\"}");
+                s.add("HTTP POST " + endpoint);
                 s.add("EXPECT_STATUS 200 hoặc 201");
-                s.add("EXPECT_BODY_FIELD data.id (ID của resource vừa tạo)");
+                s.add("EXPECT_BODY_FIELD data");
                 s.add("Lưu ID vừa tạo để dùng trong các bước kiểm tra sau.");
             }
             case "invalid" -> {
                 s.add("Lấy JWT token hợp lệ.");
-                s.add("INPUT: dữ liệu THIẾU các trường bắt buộc / sai kiểu dữ liệu cho «" + ucName + "».");
+                s.add("INPUT: dữ liệu THIẾU các trường bắt buộc / sai kiểu dữ liệu cho «" + uc.getName() + "».");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("SET_BODY {thiếu required fields}");
-                s.add("HTTP POST /api/{resource}");
+                s.add("SET_BODY {}");
+                s.add("HTTP POST " + endpoint);
                 s.add("EXPECT_STATUS 400 hoặc 422");
                 s.add("EXPECT_BODY_FIELD message");
             }
             case "no_auth" -> {
-                s.add("SET_BODY {dữ liệu hợp lệ}");
-                s.add("HTTP POST /api/{resource} (không có Authorization)");
+                s.add("SET_BODY {\"name\":\"test_value\"}");
+                s.add("HTTP POST " + endpoint + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
         }
         return s;
     }
 
-    // ── Update ─────────────────────────────────────────────────────────────
-    private List<String> buildUpdateSteps(String ucName, String dataMode) {
+    // ── Update / PUT ──────────────────────────────────────────────────────
+    private List<String> buildUpdateSteps(UseCase uc, String dataMode) {
+        String endpoint = resolveEndpoint(uc);
         List<String> s = new ArrayList<>();
         switch (dataMode) {
             case "valid" -> {
                 s.add("Chuẩn bị ID của resource cần cập nhật (đã tồn tại trong DB).");
-                s.add("INPUT: dữ liệu cập nhật HỢP LỆ cho «" + ucName + "».");
+                s.add("INPUT: dữ liệu cập nhật HỢP LỆ cho «" + uc.getName() + "».");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("SET_BODY {updated data}");
-                s.add("HTTP PUT /api/{resource}/{id}");
+                s.add("SET_BODY {\"name\":\"updated_value\",\"description\":\"updated desc\"}");
+                s.add("HTTP PUT " + endpoint);
                 s.add("EXPECT_STATUS 200");
-                s.add("EXPECT_BODY phản ánh giá trị đã được cập nhật đúng.");
+                s.add("EXPECT_BODY_FIELD data");
             }
             case "invalid" -> {
-                s.add("Sử dụng ID KHÔNG tồn tại (UUID ngẫu nhiên: 00000000-0000-0000-0000-000000000000).");
+                s.add("Sử dụng ID KHÔNG tồn tại.");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("HTTP PUT /api/{resource}/00000000-0000-0000-0000-000000000000");
+                // Đảm bảo endpoint có {id} nếu chưa có
+                String ep = endpoint.endsWith("/{id}") ? endpoint : endpoint + "/00000000-0000-0000-0000-000000000000";
+                s.add("HTTP PUT " + ep.replace("{id}", "00000000-0000-0000-0000-000000000000"));
                 s.add("EXPECT_STATUS 404 hoặc 400");
             }
             case "no_auth" -> {
-                s.add("HTTP PUT /api/{resource}/{id} (không có Authorization)");
+                s.add("HTTP PUT " + endpoint + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
         }
@@ -491,46 +583,52 @@ public class TestCaseGeneratorService {
     }
 
     // ── Delete ─────────────────────────────────────────────────────────────
-    private List<String> buildDeleteSteps(String ucName, String dataMode) {
+    private List<String> buildDeleteSteps(UseCase uc, String dataMode) {
+        String endpoint = resolveEndpoint(uc);
+        // Đảm bảo endpoint có /{id}
+        String endpointWithId = endpoint.endsWith("/{id}") ? endpoint : endpoint + "/{id}";
         List<String> s = new ArrayList<>();
         switch (dataMode) {
             case "valid" -> {
-                s.add("Chuẩn bị ID của resource cần xóa: «" + ucName + "».");
+                s.add("Chuẩn bị ID của resource cần xóa: «" + uc.getName() + "».");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("HTTP DELETE /api/{resource}/{id}");
+                s.add("HTTP DELETE " + endpointWithId.replace("{id}", "existing-resource-id"));
                 s.add("EXPECT_STATUS 200 hoặc 204");
-                s.add("HTTP GET /api/{resource}/{id} (kiểm tra đã xóa)");
+                s.add("HTTP GET " + endpointWithId.replace("{id}", "existing-resource-id") + " (kiểm tra đã xóa)");
                 s.add("EXPECT_STATUS 404 — resource không còn tồn tại.");
             }
             case "invalid" -> {
-                s.add("HTTP DELETE /api/{resource}/nonexistent-id");
+                s.add("HTTP DELETE " + endpointWithId.replace("{id}", "nonexistent-id-000"));
                 s.add("EXPECT_STATUS 404 hoặc 400");
             }
             case "no_auth" -> {
-                s.add("HTTP DELETE /api/{resource}/{id} (không có Authorization)");
+                s.add("HTTP DELETE " + endpointWithId.replace("{id}", "some-id") + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
         }
         return s;
     }
 
-    // ── View / List ────────────────────────────────────────────────────────
-    private List<String> buildViewSteps(String ucName, String dataMode) {
+    // ── View / List / GET ──────────────────────────────────────────────────
+    private List<String> buildViewSteps(UseCase uc, String dataMode) {
+        String endpoint = resolveEndpoint(uc);
+        // View/List không cần /{id}
+        String listEndpoint = endpoint.endsWith("/{id}") ? endpoint.replace("/{id}", "") : endpoint;
         List<String> s = new ArrayList<>();
         switch (dataMode) {
             case "valid" -> {
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("HTTP GET /api/{resource}");
+                s.add("HTTP GET " + listEndpoint);
                 s.add("EXPECT_STATUS 200");
-                s.add("EXPECT_BODY là JSON array hoặc object chứa data field.");
-                s.add("Kiểm tra cấu trúc dữ liệu trả về đúng với đặc tả: «" + ucName + "».");
+                s.add("EXPECT_BODY_FIELD data");
+                s.add("Kiểm tra cấu trúc dữ liệu trả về đúng với đặc tả: «" + uc.getName() + "».");
             }
             case "invalid" -> {
-                s.add("HTTP GET /api/{resource}/nonexistent-id");
+                s.add("HTTP GET " + listEndpoint + "/nonexistent-id-000");
                 s.add("EXPECT_STATUS 404");
             }
             case "no_auth" -> {
-                s.add("HTTP GET /api/{resource} (không có Authorization)");
+                s.add("HTTP GET " + listEndpoint + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
         }
@@ -538,25 +636,53 @@ public class TestCaseGeneratorService {
     }
 
     // ── Search ─────────────────────────────────────────────────────────────
-    private List<String> buildSearchSteps(String ucName, String dataMode) {
+    private List<String> buildSearchSteps(UseCase uc, String dataMode) {
+        String endpoint = resolveEndpoint(uc);
+        String listEndpoint = endpoint.endsWith("/{id}") ? endpoint.replace("/{id}", "") : endpoint;
         List<String> s = new ArrayList<>();
         switch (dataMode) {
             case "valid" -> {
                 s.add("INPUT keyword = \"test\" (từ khóa hợp lệ, có kết quả).");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("HTTP GET /api/{resource}?q=test");
+                s.add("HTTP GET " + listEndpoint + "?q=test");
                 s.add("EXPECT_STATUS 200");
-                s.add("EXPECT_BODY chứa kết quả liên quan đến keyword «test».");
-                s.add("Kiểm tra kết quả được sắp xếp/lọc đúng cho: «" + ucName + "».");
+                s.add("EXPECT_BODY_FIELD data");
+                s.add("Kiểm tra kết quả liên quan đến keyword «test» cho: «" + uc.getName() + "».");
             }
             case "invalid" -> {
                 s.add("INPUT keyword = \"\" (rỗng).");
-                s.add("HTTP GET /api/{resource}?q=");
+                s.add("HTTP GET " + listEndpoint + "?q=");
                 s.add("EXPECT_STATUS 200 (trả về toàn bộ) hoặc 400 (reject) — tuỳ business rule.");
-                s.add("Kiểm tra hành vi của hệ thống với input rỗng.");
             }
             case "no_auth" -> {
-                s.add("HTTP GET /api/{resource}?q=test (không có Authorization)");
+                s.add("HTTP GET " + listEndpoint + "?q=test (không có Authorization)");
+                s.add("EXPECT_STATUS 401 hoặc 403");
+            }
+        }
+        return s;
+    }
+
+    // ── Return (trả sách, trả hàng...) ────────────────────────────────────
+    private List<String> buildReturnSteps(UseCase uc, String dataMode) {
+        String endpoint = resolveEndpoint(uc);
+        List<String> s = new ArrayList<>();
+        switch (dataMode) {
+            case "valid" -> {
+                s.add("Chuẩn bị ID của bản ghi cần trả: «" + uc.getName() + "».");
+                s.add("HEADER Authorization: Bearer {token}");
+                s.add("HTTP POST " + endpoint);
+                s.add("EXPECT_STATUS 200");
+                s.add("EXPECT_BODY_FIELD data");
+                s.add("Xác nhận bản ghi đã được cập nhật trạng thái đã trả.");
+            }
+            case "invalid" -> {
+                s.add("Sử dụng ID không tồn tại hoặc đã trả trước đó.");
+                s.add("HEADER Authorization: Bearer {token}");
+                s.add("HTTP POST " + endpoint.replace("{id}", "nonexistent-id-000"));
+                s.add("EXPECT_STATUS 404 hoặc 400");
+            }
+            case "no_auth" -> {
+                s.add("HTTP POST " + endpoint + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
         }
@@ -573,8 +699,7 @@ public class TestCaseGeneratorService {
                 s.add("HEADER Content-Type: multipart/form-data");
                 s.add("HTTP POST /api/diagrams/upload (multipart: file + optional name)");
                 s.add("EXPECT_STATUS 200");
-                s.add("EXPECT_BODY_FIELD data.id (diagram ID vừa tạo)");
-                s.add("Lưu diagram ID để dùng cho các bước tiếp theo.");
+                s.add("EXPECT_BODY_FIELD data");
             }
             case "invalid" -> {
                 s.add("Chuẩn bị file KHÔNG hợp lệ: .exe, .zip, file > 10MB, file rỗng.");
@@ -605,7 +730,7 @@ public class TestCaseGeneratorService {
                 s.add("Kiểm tra Content-Type: application/pdf");
             }
             case "invalid" -> {
-                s.add("HTTP GET /api/export/nonexistent-diagram-id/excel");
+                s.add("HTTP GET /api/export/00000000-0000-0000-0000-000000000000/excel");
                 s.add("EXPECT_STATUS 404 hoặc 500 — diagram không tồn tại.");
             }
             case "no_auth" -> {
@@ -617,47 +742,31 @@ public class TestCaseGeneratorService {
     }
 
     // ── Generic fallback ───────────────────────────────────────────────────
-    private List<String> buildGenericSteps(String ucName, String dataMode) {
+    private List<String> buildGenericSteps(UseCase uc, String dataMode) {
+        String method = resolveHttpMethod(uc);
+        String endpoint = resolveEndpoint(uc);
         List<String> s = new ArrayList<>();
         switch (dataMode) {
             case "valid" -> {
-                s.add("Chuẩn bị môi trường và dữ liệu HỢP LỆ cho: «" + ucName + "».");
+                s.add("Chuẩn bị môi trường và dữ liệu HỢP LỆ cho: «" + uc.getName() + "».");
                 s.add("INPUT: điền đầy đủ dữ liệu theo đặc tả chức năng.");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("SET_BODY {dữ liệu hợp lệ}");
-                s.add("HTTP {METHOD} /api/{endpoint}");
+                s.add("SET_BODY {\"name\":\"test_value\",\"description\":\"test\"}");
+                s.add("HTTP " + method + " " + endpoint);
                 s.add("EXPECT_STATUS 200");
                 s.add("EXPECT_BODY_FIELD data");
             }
             case "invalid" -> {
-                s.add("Chuẩn bị dữ liệu KHÔNG hợp lệ / thiếu trường bắt buộc cho: «" + ucName + "».");
+                s.add("Chuẩn bị dữ liệu KHÔNG hợp lệ / thiếu trường bắt buộc cho: «" + uc.getName() + "».");
                 s.add("HEADER Authorization: Bearer {token}");
-                s.add("HTTP {METHOD} /api/{endpoint}");
+                s.add("HTTP " + method + " " + endpoint);
                 s.add("EXPECT_STATUS 400 hoặc 422");
                 s.add("EXPECT_BODY_FIELD message");
             }
             case "no_auth" -> {
-                s.add("HTTP {METHOD} /api/{endpoint} (không có Authorization)");
+                s.add("HTTP " + method + " " + endpoint + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
-        }
-        return s;
-    }
-
-    // ── Boundary steps ─────────────────────────────────────────────────────
-    private List<String> buildBoundaryApiSteps(UseCase uc, String bound) {
-        List<String> s = new ArrayList<>();
-        String ucName = uc.getName();
-        if ("min".equals(bound)) {
-            s.add("INPUT: thiết lập mỗi trường = giá trị TỐI THIỂU hợp lệ cho «" + ucName + "».");
-            s.add("Ví dụ: string = 1 ký tự, number = 0, date = ngày hôm nay.");
-            s.add("HEADER Authorization: Bearer {token}");
-            s.add("HTTP {METHOD} /api/{endpoint} body: {min value data}");
-        } else {
-            s.add("INPUT: thiết lập mỗi trường = giá trị TỐI ĐA hợp lệ cho «" + ucName + "».");
-            s.add("Ví dụ: string = MAX_LENGTH ký tự, number = MAX_INT, date = ngày xa nhất.");
-            s.add("HEADER Authorization: Bearer {token}");
-            s.add("HTTP {METHOD} /api/{endpoint} body: {max value data}");
         }
         return s;
     }
@@ -678,11 +787,7 @@ public class TestCaseGeneratorService {
         return tc;
     }
 
-    /**
-     * Xây bảng ánh xạ: sourceXmiId → [targetXmiId, ...] theo loại quan hệ.
-     */
-    private Map<String, List<String>> buildRelationMap(List<Relationship> rels,
-            RelationType type) {
+    private Map<String, List<String>> buildRelationMap(List<Relationship> rels, RelationType type) {
         Map<String, List<String>> map = new HashMap<>();
         for (Relationship r : rels) {
             if (r.getType() == type) {
