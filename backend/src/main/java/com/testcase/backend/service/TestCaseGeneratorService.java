@@ -457,6 +457,7 @@ public class TestCaseGeneratorService {
             }
             case "no_auth" -> {
                 s.add("Gửi request đến endpoint yêu cầu auth mà KHÔNG có token.");
+                s.add("HEADER Authorization: Bearer invalid_token_xyz_000");
                 s.add("HTTP GET /api/diagrams");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
@@ -472,7 +473,9 @@ public class TestCaseGeneratorService {
                 s.add("INPUT username = \"newuser_test\" (đảm bảo unique)");
                 s.add("INPUT email    = \"newuser@example.com\"");
                 s.add("INPUT password = \"StrongPass@123\"");
-                s.add("SET_BODY {\"username\":\"newuser_test\",\"email\":\"newuser@example.com\",\"password\":\"StrongPass@123\"}");
+                long ts = System.currentTimeMillis();
+                s.add("SET_BODY {\"username\":\"newuser_" + ts + "\",\"email\":\"newuser" + ts
+                        + "@example.com\",\"password\":\"StrongPass@123\"}");
                 s.add("HTTP POST /api/auth/register");
                 s.add("EXPECT_STATUS 200");
                 s.add("EXPECT_BODY_FIELD data.token");
@@ -575,6 +578,7 @@ public class TestCaseGeneratorService {
                 s.add("EXPECT_STATUS 404 hoặc 400");
             }
             case "no_auth" -> {
+                s.add("HEADER Authorization: Bearer invalid_token_xyz_000");
                 s.add("HTTP PUT " + endpoint + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
@@ -602,6 +606,7 @@ public class TestCaseGeneratorService {
                 s.add("EXPECT_STATUS 404 hoặc 400");
             }
             case "no_auth" -> {
+                s.add("HEADER Authorization: Bearer invalid_token_xyz_000");
                 s.add("HTTP DELETE " + endpointWithId.replace("{id}", "some-id") + " (không có Authorization)");
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
@@ -628,7 +633,8 @@ public class TestCaseGeneratorService {
                 s.add("EXPECT_STATUS 404");
             }
             case "no_auth" -> {
-                s.add("HTTP GET " + listEndpoint + " (không có Authorization)");
+                s.add("HEADER Authorization: Bearer invalid_token_xyz_000");
+                s.add("HTTP GET " + listEndpoint);
                 s.add("EXPECT_STATUS 401 hoặc 403");
             }
         }
