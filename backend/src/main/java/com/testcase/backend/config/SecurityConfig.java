@@ -33,6 +33,7 @@ public class SecurityConfig {
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // ← thêm dòng này
+                        .requestMatchers("/api/selenium/**").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
                         // xóa dòng permitAll của upload
                         .requestMatchers("/api/diagrams/**").authenticated() // ← giữ nguyên

@@ -442,6 +442,23 @@ export default function TestCasePage() {
               )}
             </span>
             <div className="toolbar-actions">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={allTc.length === 0}
+                onClick={async () => {
+                  const ids = checked.size > 0 
+                    ? [...checked] 
+                    : filtered.map(tc => tc.id)
+                  await api.post('/api/selenium/run', {
+                    diagramId: selectedDiagramId,
+                    ids
+                  })
+                  alert('🤖 Selenium đang khởi động browser...')
+                }}
+              >
+                🤖 Chạy bằng Selenium
+              </Button>
               {/* ── Export buttons ── */}
               <Button
                 variant="secondary"
