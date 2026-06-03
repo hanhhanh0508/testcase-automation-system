@@ -241,22 +241,22 @@ public class ApiExecutorService {
 
         ctx.headers.forEach((key, values) -> {
             for (String value : values) {
-                String resolved = resolvePlaceholders(value, ctx.variables); // ← thêm dòng này
-                headers.addIfAbsent(key, resolved); // ← dùng resolved
+                String resolved = resolvePlaceholders(value, ctx.variables);
+                headers.set(key, resolved); // dùng set thay addIfAbsent
             }
         });
-        // ← THÊM ĐOẠN NÀY: tự động inject token nếu chưa có Authorization header
+
+        // Auto-inject token nếu chưa có Authorization header
         if (headers.getFirst("Authorization") == null && ctx.variables.containsKey("token")) {
             headers.set("Authorization", "Bearer " + ctx.variables.get("token"));
             log.append("  ℹ️  Auto-inject Authorization header từ token đã lưu.\n");
         }
 
-        // Bỏ qua Authorization header có placeholder chưa resolve (vd: "Bearer
-        // {token}")
+        // Chỉ xóa nếu vẫn còn placeholder chưa được resolve
         String authHeader = headers.getFirst("Authorization");
-        if (authHeader != null && authHeader.contains("{") && authHeader.contains("}")) {
+        if (authHeader != null && authHeader.matches(".*\\{[^}]+\\}.*")) {
             headers.remove("Authorization");
-            log.append("  ℹ️  Authorization header chứa placeholder — bỏ qua (chưa đăng nhập)\n");
+            log.append("  ℹ️  Token chưa có — bỏ qua Authorization header\n");
         }
         // Bỏ qua Authorization header có placeholder chưa resolve (vd: "Bearer
         // {token}")
