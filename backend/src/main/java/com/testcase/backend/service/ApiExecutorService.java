@@ -14,19 +14,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Engine thực thi Test Case sử dụng RestTemplate (Spring HTTP Client Library).
- *
- * Fix: escape các URI template placeholder chưa được resolve ({resource},
- * {id}, {token}...) trước khi truyền vào RestTemplate để tránh lỗi
- * "Not enough variable values available to expand '...'"
  */
 @Service
 public class ApiExecutorService {
@@ -79,7 +73,7 @@ public class ApiExecutorService {
             log.append("║  ENGINE  : RestTemplate HTTP Client (Library-based)\n");
             log.append("║  TARGET  : ").append(baseUrl).append("\n");
             log.append("╚══════════════════════════════════════════════════════════╝\n\n");
-            // ← THÊM 2 DÒNG NÀY VÀO ĐÂY
+
             log.append("  🔐  Đang tự động đăng nhập để lấy JWT token...\n");
             autoLogin(ctx, log);
 
@@ -92,6 +86,10 @@ public class ApiExecutorService {
                     log.append("\n").append(step).append("\n");
                     continue;
                 }
+
+                // --- SỬA TẠI ĐÂY: Xử lý biến động (Runtime Dynamic Data) trước khi Log và
+                // Process ---
+                step = injectRuntimeDynamicData(step, log);
 
                 log.append("[Step ").append(i + 1).append("] ").append(step).append("\n");
                 processStep(step, ctx, log);
@@ -127,6 +125,35 @@ public class ApiExecutorService {
             testCaseRepository.save(tc);
             return saveResult(tc, TestOutcome.ERROR, log.toString(), ex.getMessage(), durationMs);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PRIVATE: Bộ xử lý chuỗi ngẫu nhiên tại Runtime (Fix TC-329)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Tự động quét và thay thế các placeholder động bằng dữ liệu thực tế khi thực
+     * thi.
+     * Hỗ trợ các định dạng: __RANDOM__, ${RANDOM}, __TIMESTAMP__
+     */
+    private String injectRuntimeDynamicData(String step, StringBuilder log) {
+        String processedStep = step;
+
+        // 1. Xử lý placeholder RANDOM (Chuỗi 8 ký tự ngẫu nhiên)
+        if (processedStep.contains("__RANDOM__") || processedStep.contains("${RANDOM}")) {
+            String runtimeRandom = UUID.randomUUID().toString().substring(0, 8);
+            processedStep = processedStep.replace("__RANDOM__", runtimeRandom)
+                    .replace("${RANDOM}", runtimeRandom);
+        }
+
+        // 2. Xử lý placeholder TIMESTAMP (Thời gian chạy thực tế bằng mili-giây)
+        if (processedStep.contains("__TIMESTAMP__") || processedStep.contains("${TIMESTAMP}")) {
+            String runtimeTimestamp = String.valueOf(System.currentTimeMillis());
+            processedStep = processedStep.replace("__TIMESTAMP__", runtimeTimestamp)
+                    .replace("${TIMESTAMP}", runtimeTimestamp);
+        }
+
+        return processedStep;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -204,14 +231,12 @@ public class ApiExecutorService {
         String method = tokens[1].toUpperCase();
         String rawPath = tokens[2];
 
-        // Validate method — từ chối nếu vẫn còn placeholder
         if (rawPath.toUpperCase().equals("{METHOD}") || method.startsWith("{")) {
             log.append("  ⚠️  HTTP method chưa được resolve: ").append(method)
                     .append(" — bỏ qua step này\n");
             return;
         }
 
-        // Validate method hợp lệ
         Set<String> validMethods = Set.of("GET", "POST", "PUT", "DELETE", "PATCH");
         if (!validMethods.contains(method)) {
             log.append("  ⚠️  HTTP method không hợp lệ: ").append(method)
@@ -219,19 +244,15 @@ public class ApiExecutorService {
             return;
         }
 
-        // Resolve variables từ context (ví dụ {token} → giá trị thật)
         String path = resolvePlaceholders(rawPath, ctx.variables);
 
-        // Body: từ SET_BODY hoặc inline "body:"
+        // Lấy Body từ SET_BODY hoặc inline "body:"
         String body = ctx.pendingBody;
         if (step.toLowerCase().contains("body:")) {
             int idx = step.toLowerCase().indexOf("body:");
             body = step.substring(idx + 5).trim();
         }
 
-        // ── KEY FIX: escape các placeholder chưa resolve trong URL ──────────
-        // Ví dụ: /api/borrows/{id}/return → /api/borrows/%7Bid%7D/return
-        // Điều này ngăn RestTemplate cố gắng expand chúng như URI variables
         String safePath = escapePlaceholders(path);
         String url = baseUrl + (safePath.startsWith("/") ? safePath : "/" + safePath);
 
@@ -239,7 +260,6 @@ public class ApiExecutorService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.ALL));
 
-        // Bước 1: Copy tất cả header từ ctx, resolve biến
         ctx.headers.forEach((key, values) -> {
             for (String value : values) {
                 String resolved = resolvePlaceholders(value, ctx.variables);
@@ -249,10 +269,8 @@ public class ApiExecutorService {
             }
         });
 
-        // Bước 2: Nếu Authorization vẫn còn placeholder → thay bằng token thật
         String currentAuth = headers.getFirst("Authorization");
         if (currentAuth != null && currentAuth.contains("{token}")) {
-            // Vẫn còn placeholder → resolve thủ công
             if (ctx.variables.containsKey("token")) {
                 headers.set("Authorization", "Bearer " + ctx.variables.get("token"));
                 log.append("  ✅  Đã resolve {token} trong Authorization header.\n");
@@ -262,17 +280,11 @@ public class ApiExecutorService {
             }
         }
 
-        // Bước 3: Nếu không có Authorization header nào → auto-inject
         if (headers.getFirst("Authorization") == null && ctx.variables.containsKey("token")) {
             headers.set("Authorization", "Bearer " + ctx.variables.get("token"));
-            log.append("  ℹ️  Auto-inject Authorization từ token đã lưu.\n");
+            log.append("  ℹ  Auto-inject Authorization từ token đã lưu.\n");
         }
-        log.append("  🔍 DEBUG Auth header: ")
-                .append(headers.getFirst("Authorization"))
-                .append("\n");
-        log.append("  🔍 DEBUG token in ctx: ")
-                .append(ctx.variables.get("token") != null ? "CÓ" : "KHÔNG CÓ")
-                .append("\n");
+
         HttpEntity<String> entity = new HttpEntity<>(
                 (body != null && !body.isEmpty()) ? body : null, headers);
 
@@ -302,26 +314,15 @@ public class ApiExecutorService {
         ctx.pendingBody = null;
     }
 
-    /**
-     * Escape các {placeholder} chưa resolve trong URL path.
-     * Thay { → %7B và } → %7D để RestTemplate không cố expand chúng.
-     * Các biến đã được resolve (ví dụ token thật, ID thật) sẽ không có dấu ngoặc
-     * nên an toàn.
-     */
     private String escapePlaceholders(String path) {
-        // Chỉ escape nếu path còn chứa {name} pattern chưa resolve
         Matcher m = PLACEHOLDER_PATTERN.matcher(path);
         if (!m.find())
-            return path; // không có placeholder → giữ nguyên
+            return path;
 
-        // Reset matcher
         m.reset();
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
-            String placeholder = m.group(0); // toàn bộ {name}
-            // Nếu đây là UUID pattern (all hex + dashes, no letters like "id", "token") →
-            // giữ nguyên
-            // Nhưng nếu là placeholder text → escape
+            String placeholder = m.group(0);
             m.appendReplacement(sb, Matcher.quoteReplacement(
                     placeholder.replace("{", "%7B").replace("}", "%7D")));
         }
@@ -408,7 +409,6 @@ public class ApiExecutorService {
         String[] hParts = h.split(":", 2);
         if (hParts.length == 2) {
             String key = hParts[0].trim();
-            // Resolve {token} và các biến khác ngay tại đây
             String value = resolvePlaceholders(hParts[1].trim(), ctx.variables);
             ctx.headers.set(key, value);
             log.append("  ➤  HEADER ").append(key).append(" set\n");
@@ -424,10 +424,6 @@ public class ApiExecutorService {
     // HELPERS
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Resolve các biến đã lưu trong context (ví dụ {token} → giá trị thật).
-     * Chỉ replace những key đã có trong variables map.
-     */
     private String resolvePlaceholders(String path, Map<String, String> vars) {
         String resolved = path;
         for (Map.Entry<String, String> e : vars.entrySet()) {
@@ -462,10 +458,6 @@ public class ApiExecutorService {
         return testResultRepository.save(r);
     }
 
-    /**
-     * Tự động đăng nhập để lấy JWT token thật,
-     * lưu vào ctx.variables["token"] để dùng cho các bước tiếp theo.
-     */
     private void autoLogin(ExecutionContext ctx, StringBuilder log) {
         try {
             HttpHeaders h = new HttpHeaders();
@@ -497,9 +489,6 @@ public class ApiExecutorService {
             log.append("  ⚠️  Auto-login lỗi: ").append(e.getMessage()).append("\n");
         }
     }
-    // ─────────────────────────────────────────────────────────────────────────
-    // INNER CLASS: ngữ cảnh thực thi
-    // ─────────────────────────────────────────────────────────────────────────
 
     private static class ExecutionContext {
         Map<String, String> variables = new HashMap<>();
