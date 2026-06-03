@@ -474,8 +474,8 @@ public class TestCaseGeneratorService {
                 s.add("INPUT email    = \"newuser@example.com\"");
                 s.add("INPUT password = \"StrongPass@123\"");
                 long ts = System.currentTimeMillis();
-                s.add("SET_BODY {\"username\":\"newuser_" + ts + "\",\"email\":\"newuser" + ts
-                        + "@example.com\",\"password\":\"StrongPass@123\"}");
+                s.add("SET_BODY {\"username\":\"newuser_" + ts + "\",\"email\":\"newuser"
+                        + ts + "@example.com\",\"password\":\"StrongPass@123\"}");
                 s.add("HTTP POST /api/auth/register");
                 s.add("EXPECT_STATUS 200");
                 s.add("EXPECT_BODY_FIELD data.token");

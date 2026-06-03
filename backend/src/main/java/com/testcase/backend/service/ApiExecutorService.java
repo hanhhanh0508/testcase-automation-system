@@ -239,28 +239,40 @@ public class ApiExecutorService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.ALL));
 
+        // Bước 1: Copy tất cả header từ ctx, resolve biến
         ctx.headers.forEach((key, values) -> {
             for (String value : values) {
                 String resolved = resolvePlaceholders(value, ctx.variables);
-                headers.set(key, resolved); // dùng set thay addIfAbsent
+                headers.set(key, resolved);
+                log.append("  🔍  Header sau resolve: ").append(key)
+                        .append(" = ").append(resolved).append("\n");
             }
         });
 
-        // Auto-inject token nếu chưa có Authorization header
+        // Bước 2: Nếu Authorization vẫn còn placeholder → thay bằng token thật
+        String currentAuth = headers.getFirst("Authorization");
+        if (currentAuth != null && currentAuth.contains("{token}")) {
+            // Vẫn còn placeholder → resolve thủ công
+            if (ctx.variables.containsKey("token")) {
+                headers.set("Authorization", "Bearer " + ctx.variables.get("token"));
+                log.append("  ✅  Đã resolve {token} trong Authorization header.\n");
+            } else {
+                headers.remove("Authorization");
+                log.append("  ⚠️  Không có token — xóa Authorization header.\n");
+            }
+        }
+
+        // Bước 3: Nếu không có Authorization header nào → auto-inject
         if (headers.getFirst("Authorization") == null && ctx.variables.containsKey("token")) {
             headers.set("Authorization", "Bearer " + ctx.variables.get("token"));
-            log.append("  ℹ️  Auto-inject Authorization header từ token đã lưu.\n");
+            log.append("  ℹ️  Auto-inject Authorization từ token đã lưu.\n");
         }
-
-        // Chỉ xóa nếu vẫn còn placeholder chưa được resolve
-        String authHeader = headers.getFirst("Authorization");
-        if (authHeader != null && authHeader.matches(".*\\{[^}]+\\}.*")) {
-            headers.remove("Authorization");
-            log.append("  ℹ️  Token chưa có — bỏ qua Authorization header\n");
-        }
-        // Bỏ qua Authorization header có placeholder chưa resolve (vd: "Bearer
-        // {token}")
-
+        log.append("  🔍 DEBUG Auth header: ")
+                .append(headers.getFirst("Authorization"))
+                .append("\n");
+        log.append("  🔍 DEBUG token in ctx: ")
+                .append(ctx.variables.get("token") != null ? "CÓ" : "KHÔNG CÓ")
+                .append("\n");
         HttpEntity<String> entity = new HttpEntity<>(
                 (body != null && !body.isEmpty()) ? body : null, headers);
 
