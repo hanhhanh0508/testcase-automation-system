@@ -1,0 +1,104 @@
+{
+  "diagramName": "Library Management System",
+  "actors": [
+    {
+      "xmiId": "A1",
+      "name": "Member",
+      "actorType": "PRIMARY",
+      "description": "Thành viên thư viện"
+    },
+    {
+      "xmiId": "A2",
+      "name": "Librarian",
+      "actorType": "PRIMARY",
+      "description": "Thủ thư quản lý hệ thống"
+    },
+    {
+      "xmiId": "A3",
+      "name": "Email System",
+      "actorType": "SECONDARY",
+      "description": "Hệ thống gửi email tự động"
+    }
+  ],
+  "useCases": [
+    {
+      "xmiId": "UC1",
+      "name": "Register Account",
+      "description": "Thành viên đăng ký tài khoản mới",
+      "preconditions": ["Email chưa được đăng ký", "Hệ thống đang hoạt động"],
+      "postconditions": ["Tài khoản được tạo", "Email xác nhận được gửi"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC2",
+      "name": "Login",
+      "description": "Thành viên đăng nhập vào hệ thống",
+      "preconditions": ["Tài khoản đã tồn tại"],
+      "postconditions": ["JWT token được cấp", "Session được tạo"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC3",
+      "name": "Search Book",
+      "description": "Tìm kiếm sách theo tiêu đề, tác giả hoặc ISBN",
+      "preconditions": ["Thành viên đã đăng nhập"],
+      "postconditions": ["Danh sách kết quả được hiển thị"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC4",
+      "name": "Borrow Book",
+      "description": "Thành viên mượn sách từ thư viện",
+      "preconditions": ["Thành viên đã đăng nhập", "Sách còn trong kho", "Thành viên chưa vượt giới hạn mượn"],
+      "postconditions": ["Bản ghi mượn được tạo", "Số lượng sách giảm 1"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC5",
+      "name": "Return Book",
+      "description": "Thành viên trả sách đã mượn",
+      "preconditions": ["Thành viên đã mượn sách này"],
+      "postconditions": ["Bản ghi trả được cập nhật", "Số lượng sách tăng 1"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC6",
+      "name": "Send Overdue Notification",
+      "description": "Gửi thông báo quá hạn trả sách",
+      "preconditions": ["Có bản ghi mượn quá hạn"],
+      "postconditions": ["Email thông báo được gửi"],
+      "priority": "MEDIUM"
+    },
+    {
+      "xmiId": "UC7",
+      "name": "Manage Books",
+      "description": "Thủ thư thêm, sửa, xóa thông tin sách",
+      "preconditions": ["Thủ thư đã đăng nhập", "Có quyền quản lý"],
+      "postconditions": ["Danh mục sách được cập nhật"],
+      "priority": "HIGH"
+    },
+    {
+      "xmiId": "UC8",
+      "name": "View Borrow History",
+      "description": "Xem lịch sử mượn trả sách",
+      "preconditions": ["Thành viên đã đăng nhập"],
+      "postconditions": ["Lịch sử được hiển thị"],
+      "priority": "MEDIUM"
+    }
+  ],
+  "relationships": [
+    { "sourceXmiId": "A1", "targetXmiId": "UC1", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC2", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC3", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC4", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC5", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A1", "targetXmiId": "UC8", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A2", "targetXmiId": "UC7", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A2", "targetXmiId": "UC6", "type": "ASSOCIATION" },
+    { "sourceXmiId": "A3", "targetXmiId": "UC6", "type": "ASSOCIATION" },
+    { "sourceXmiId": "UC4", "targetXmiId": "UC2", "type": "INCLUDE" },
+    { "sourceXmiId": "UC5", "targetXmiId": "UC2", "type": "INCLUDE" },
+    { "sourceXmiId": "UC4", "targetXmiId": "UC6", "type": "EXTEND" },
+    { "sourceXmiId": "UC3", "targetXmiId": "UC4", "type": "EXTEND" }
+  ]
+}
