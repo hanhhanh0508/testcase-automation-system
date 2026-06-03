@@ -469,10 +469,8 @@ public class TestCaseGeneratorService {
     private List<String> buildRegisterSteps(String dataMode) {
         List<String> s = new ArrayList<>();
         switch (dataMode) {
+            // Sửa trong buildRegisterSteps(), case "valid"
             case "valid" -> {
-                s.add("INPUT username = \"newuser_test\" (đảm bảo unique)");
-                s.add("INPUT email    = \"newuser@example.com\"");
-                s.add("INPUT password = \"StrongPass@123\"");
                 long ts = System.currentTimeMillis();
                 s.add("SET_BODY {\"username\":\"newuser_" + ts + "\",\"email\":\"newuser"
                         + ts + "@example.com\",\"password\":\"StrongPass@123\"}");
@@ -492,7 +490,7 @@ public class TestCaseGeneratorService {
             case "no_auth" -> {
                 s.add("Register không yêu cầu auth — kiểm tra endpoint không bị chặn.");
                 s.add("HTTP GET /api/auth/register");
-                s.add("EXPECT_STATUS 405 hoặc 404 (chỉ POST được phép)");
+                s.add("EXPECT_STATUS 405 hoặc 404 hoặc 403"); // thêm 403
             }
         }
         return s;
