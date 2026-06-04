@@ -6,9 +6,6 @@ import './SettingsPage.css'
 export default function SettingsPage() {
   const [apiUrl,     setApiUrl]     = useState('http://localhost:8080')
   const [timeout,    setTimeout_]   = useState('5000')
-  const [apiKey,     setApiKey]     = useState('')
-  const [model,      setModel]      = useState('claude-sonnet-4-20250514')
-  const [language,   setLanguage]   = useState('vi')
   const [maxRetries, setMaxRetries] = useState('3')
   const [saved,      setSaved]      = useState(false)
 
@@ -21,7 +18,7 @@ export default function SettingsPage() {
     <div className="settings-page">
       <PageHeader
         title="Cài đặt"
-        subtitle="Cấu hình kết nối backend, AI model và môi trường chạy test"
+        subtitle="Cấu hình kết nối backend và môi trường chạy test"
       />
 
       <div className="settings-grid">
@@ -45,38 +42,6 @@ export default function SettingsPage() {
           <div className="settings-status">
             <span className="status-dot green" />
             <span className="status-txt">Kết nối OK · MySQL · Spring Boot 4.0.5</span>
-          </div>
-        </Card>
-
-        {/* AI */}
-        <Card>
-          <SectionLabel>AI Model (Claude)</SectionLabel>
-          <div className="settings-form">
-            <div className="sf-row">
-              <label className="sf-label">API Key</label>
-              <input
-                className="sf-input sf-mono"
-                type="password"
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
-              />
-            </div>
-            <div className="sf-row">
-              <label className="sf-label">Model</label>
-              <select className="sf-select" value={model} onChange={e => setModel(e.target.value)}>
-                <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (khuyên dùng)</option>
-                <option value="claude-opus-4-20250514">Claude Opus 4 (chính xác hơn)</option>
-                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (nhanh hơn)</option>
-              </select>
-            </div>
-            <div className="sf-row">
-              <label className="sf-label">Ngôn ngữ output</label>
-              <select className="sf-select" value={language} onChange={e => setLanguage(e.target.value)}>
-                <option value="vi">Tiếng Việt</option>
-                <option value="en">English</option>
-              </select>
-            </div>
           </div>
         </Card>
 

@@ -93,35 +93,84 @@ export default function UploadPage() {
 
   /* ── doUpload — nằm TRONG component để dùng state ── */
   const doUpload = async (f) => {
-    setLoading(true)
-    setError(null)
-    setParsed(null)
-    setDiagramId(null)
-    setGenSuccess(false)
+  setLoading(true)
+  setError(null)
+  setParsed(null)
+  setDiagramId(null)
+  setGenSuccess(false)
 
-    try {
-      const fd = new FormData()
-      fd.append('file', f)
-      if (projectName.trim()) fd.append('name', projectName.trim())
+  try {
+    const fd = new FormData()
+    fd.append('file', f)
+    if (projectName.trim()) fd.append('name', projectName.trim())
 
-      const res = await api.post('/api/diagrams/upload', fd)
-      console.log('Upload response:', res.data)  // ← thêm dòng này
+    const res = await api.post('/api/diagrams/upload', fd)
+    const data = res.data?.data
 
-      const data = res.data?.data
-      if (data?.id) {
-        console.log('Diagram ID saved:', data.id)  // ← và dòng này
-        setDiagramId(data.id)
-      }
-      setParsed(MOCK_PARSED)
-    } catch (err) {
-      // Backend offline hoặc lỗi → vẫn hiển thị mock để demo UI
-      console.warn('Upload backend error:', err?.response?.data || err.message)
-      setParsed(MOCK_PARSED)
-      setError('Upload thất bại (backend offline?). Đang dùng dữ liệu demo.')
-    } finally {
-      setLoading(false)
+    if (data?.id) {
+      setDiagramId(data.id)
     }
+
+    // Map dữ liệu thực từ response
+    const actors = data?.actors || []
+    const useCases = data?.useCases || []
+    const relationships = data?.relationships || []
+
+    // Group use cases theo actor dựa vào relationships ASSOCIATION
+    const actorUCMap = {}
+    actors.forEach(a => { actorUCMap[a.xmiId] = [] })
+    relationships
+      .filter(r => r.type === 'ASSOCIATION')
+      .forEach(r => {
+        // source là actor, target là use case
+        const isActorSource = actors.some(a => a.xmiId === r.sourceXmiId)
+        if (isActorSource && actorUCMap[r.sourceXmiId]) {
+          const uc = useCases.find(u => u.xmiId === r.targetXmiId)
+          if (uc) actorUCMap[r.sourceXmiId].push(uc.name)
+        }
+      })
+
+    const SHOW_MAX = 3
+    const parsedActors = actors.map(a => {
+      const ucList = actorUCMap[a.xmiId] || []
+      return {
+        name: a.name,
+        initial: a.name.charAt(0).toUpperCase(),
+        useCases: ucList.slice(0, SHOW_MAX),
+        extra: Math.max(0, ucList.length - SHOW_MAX),
+      }
+    })
+
+    const parsedRels = relationships
+      .filter(r => r.type === 'INCLUDE' || r.type === 'EXTEND')
+      .slice(0, 5)
+      .map(r => {
+        const from = useCases.find(u => u.xmiId === r.sourceXmiId)?.name
+          || actors.find(a => a.xmiId === r.sourceXmiId)?.name
+          || r.sourceXmiId
+        const to = useCases.find(u => u.xmiId === r.targetXmiId)?.name
+          || actors.find(a => a.xmiId === r.targetXmiId)?.name
+          || r.targetXmiId
+        return { type: r.type.toLowerCase(), from, to }
+      })
+
+    setParsed({
+      stats: {
+        actors: actors.length,
+        useCases: useCases.length,
+        relationships: relationships.length,
+      },
+      actors: parsedActors,
+      relationships: parsedRels,
+    })
+
+  } catch (err) {
+    console.warn('Upload error:', err?.response?.data || err.message)
+    setError('Upload thất bại: ' + (err?.response?.data?.message || err.message))
+  } finally {
+    setLoading(false)
   }
+}
 
   /* ── handleGenerate — nằm TRONG component ── */
   const handleGenerate = async () => {
